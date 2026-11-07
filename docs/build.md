@@ -33,7 +33,8 @@
 - `TargetFramework` — `net8.0`, зависимости через `PackageReference`
   (`Microsoft.Data.Sqlite`, `System.Text.Encoding.CodePages`) вместо `HintPath`;
 - правки `HelpIndexer` под Linux-раскладку справки (см. [porting.md](porting.md));
-- файл `AssemblyInfo.cs` поправлен после декомпиляции (удалён служебный атрибут).
+- `Properties/AssemblyInfo.cs` — атрибуты сборки без служебного
+  `RefSafetyRulesAttribute`.
 
 `scripts/build.sh` выполняет `dotnet publish -c Release -o dist` и кладёт рядом
 нативную библиотеку. Запуск — `dotnet dist/ConfasterMCP.dll` или apphost.
