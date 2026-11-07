@@ -1,0 +1,12 @@
+/original/
+/.opencode/
+
+# build artifacts
+bin/
+obj/
+dist/
+
+# runtime data
+*.db
+*.db-shm
+*.db-wal
