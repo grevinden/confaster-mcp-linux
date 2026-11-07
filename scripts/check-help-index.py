@@ -25,7 +25,7 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DLL = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "dist", "ConfasterMCP.dll")
 
-MIN_TOPICS = {"syntax": 25000, "language": 4, "query": 20}
+MIN_TOPICS = {"syntax": 25000, "language": 30, "query": 110}
 
 
 def fail(message):
@@ -129,6 +129,16 @@ def main():
             if "topic_id:" in line and "/query/" not in line:
                 problems.append("category=query вернул тему другого раздела: %s" % line.strip())
                 break
+        if "%s/query/KeyWordsSELECT" % version not in (filtered.get("text") or ""):
+            problems.append("поиск «ВЫБРАТЬ» не находит тему «Ключевое слово ВЫБРАТЬ» (%s/query/KeyWordsSELECT)" % version)
+
+        join = call("search_1c_help", {"query": "СОЕДИНЕНИЕ", "limit": 5, "category": "query"})
+        if "%s/query/" % version not in (join.get("text") or ""):
+            problems.append("поиск «СОЕДИНЕНИЕ» не находит тем языка запросов")
+
+        keyword = call("get_1c_help_topic", {"topic_id": "%s/query/KeyWordsSELECT" % version})
+        if len(keyword.get("content") or "") < 50:
+            problems.append("get_1c_help_topic не отдал тему %s/query/KeyWordsSELECT" % version)
 
         words = call("search_1c_help", {"query": "ВЫБРАТЬ ИЗ ГДЕ", "limit": 3})
         if not words.get("total"):

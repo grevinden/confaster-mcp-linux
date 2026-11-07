@@ -30,13 +30,13 @@
 
 ```text
 HELP_STATUS:parsed:syntax:25520
-HELP_STATUS:parsed:language:5
-HELP_STATUS:parsed:query:25
+HELP_STATUS:parsed:language:32
+HELP_STATUS:parsed:query:119
 ```
 
-Если строк `language` и `query` нет или счётчики нулевые, проверьте, что рядом
-с `shcntx_ru.hbk` лежат `shlang_ru.hbk` и `shquery_ru.hbk`. Полная проверка
-индекса — свежий индекс во временном каталоге, все три раздела, поиск,
+Если строк `language` и `query` нет или счётчики близки к нулю, проверьте, что
+рядом с `shcntx_ru.hbk` лежат `shlang_ru.hbk` и `shquery_ru.hbk`. Полная
+проверка индекса — свежий индекс во временном каталоге, все три раздела, поиск,
 переиндексация:
 
 ```bash
@@ -44,13 +44,17 @@ scripts/check-help-index.py                                   # dist/ConfasterMC
 scripts/check-help-index.py /usr/lib/confaster-mcp/ConfasterMCP
 ```
 
-## Три страницы справки не попадают в индекс
+## Тринадцать страниц справки не попадают в индекс
 
-В `shquery_ru.hbk` это `present.html` и `builtin_functions.html`, в
-`shlang_ru.hbk` — `expression_priorities.html`: они сжаты deflate с
+Индексируется 25 671 тема из 25 684. Остальные тринадцать сжаты deflate с
 предустановленным словарём упаковщика 1С, а `DeflateStream` такой словарь
-задать не может. Пропускаются 3 страницы из 25 551; остальные 25 550 тем
-индексируются, включая язык запросов.
+задать не может: поток обрывается, текст получается битым, и запись
+отбрасывается по сверке с `uncompressed size`. В `shquery_ru.hbk` это
+`LitHum`, `LitType`, `STRING`, `DATEADD`, `INDEXBY`, `present.html`,
+`builtin_functions.html`; в `shlang_ru.hbk` — `struct_TryCatch`, `8`,
+`struct_While`, `SavingSettings`, `expression_priorities.html`, `struct_Raise`.
+Все ключевые слова языка запросов (`ВЫБРАТЬ`, `ГДЕ`, `СОЕДИНЕНИЕ`,
+`СГРУППИРОВАТЬ ПО` и др.) в индексе есть.
 
 ## Индекс справки оказался в текущем каталоге
 

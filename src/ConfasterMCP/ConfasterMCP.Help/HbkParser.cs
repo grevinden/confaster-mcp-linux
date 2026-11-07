@@ -54,15 +54,23 @@ internal static class HbkParser
 			int num3 = BitConverter.ToUInt16(array2, num2 + 6);
 			int num4 = BitConverter.ToUInt16(array2, num2 + 8);
 			int num5 = (int)BitConverter.ToUInt32(array2, num2 + 18);
+			int num9 = (int)BitConverter.ToUInt32(array2, num2 + 22);
 			int num6 = BitConverter.ToUInt16(array2, num2 + 26);
 			int num7 = BitConverter.ToUInt16(array2, num2 + 28);
 			int num8 = num2 + LocalHeaderSize + num6 + num7;
 			string text = DecodeEntryName(array2, num2 + LocalHeaderSize, num6, (num3 & 0x800) != 0);
 			num = num8 + num5;
-			if ((text.EndsWith(".html", StringComparison.OrdinalIgnoreCase) || text.EndsWith(".htm", StringComparison.OrdinalIgnoreCase)) && text.IndexOf('\0') < 0)
+			if (text.IndexOf('\0') < 0)
 			{
-				byte[] array3 = ReadEntryData(array2, num8, num5, num4);
+				byte[] array3 = ReadEntryData(array2, num8, num5, num4, num9);
 				if (array3 == null || array3.Length == 0)
+				{
+					continue;
+				}
+				// Расширение не показатель: в shquery_ru.hbk страницы называются
+				// KeyWordsSELECT, WhereStatement, JOIN и т. п., без .html. Тип
+				// определяется по содержимому, шаблоны .st и рисунки отсеиваются.
+				if (!LooksLikeHtml(array3))
 				{
 					continue;
 				}
@@ -184,10 +192,26 @@ internal static class HbkParser
 		}
 	}
 
-	// Часть страниц в shlang/shquery сжата deflate с предустановленным словарём
-	// (его задаёт упаковщик 1С). DeflateStream словарь задать не может, такие
-	// записи пропускаются: их 3 из 25551.
-	private static byte[]? ReadEntryData(byte[] zip, int offset, int compressedSize, int method)
+	private static bool LooksLikeHtml(byte[] data)
+	{
+		int num = 0;
+		if (data.Length >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF)
+		{
+			num = 3;
+		}
+		while (num < data.Length && (data[num] == 32 || data[num] == 9 || data[num] == 13 || data[num] == 10))
+		{
+			num++;
+		}
+		return num < data.Length && data[num] == 60;
+	}
+
+	// Часть страниц в shlang_ru.hbk и shquery_ru.hbk сжата deflate с
+	// предустановленным словарём упаковщика 1С. DeflateStream словарь задать не
+	// может: такие записи либо падают с ошибкой, либо дают усечённый и битый
+	// текст. Поэтому результат сверяется с полем uncompressed size — частичный
+	// поток отбрасывается и в индекс не попадает.
+	private static byte[]? ReadEntryData(byte[] zip, int offset, int compressedSize, int method, int uncompressedSize)
 	{
 		if (compressedSize <= 0 || offset < 0 || offset + compressedSize > zip.Length)
 		{
@@ -197,6 +221,10 @@ internal static class HbkParser
 		{
 			if (method == 0)
 			{
+				if (uncompressedSize > 0 && compressedSize != uncompressedSize)
+				{
+					return null;
+				}
 				int num = Math.Min(compressedSize, MaxEntryBytes);
 				byte[] array = new byte[num];
 				Buffer.BlockCopy(zip, offset, array, 0, num);
@@ -216,6 +244,10 @@ internal static class HbkParser
 				}
 				memoryStream2.Write(array2, 0, num3);
 				num2 += num3;
+			}
+			if (uncompressedSize > 0 && memoryStream2.Length != uncompressedSize)
+			{
+				return null;
 			}
 			return memoryStream2.ToArray();
 		}
