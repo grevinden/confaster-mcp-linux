@@ -13,6 +13,8 @@ internal sealed class Search1cHelpTool : IConfasterMCPTool
 
 	private readonly HelpIndexer _indexer;
 
+	private readonly IHelpAliasResolver _aliases;
+
 	public string Name => "search_1c_help";
 
 	public string Description => "Полнотекстовый поиск по официальной справке платформы 1С:Предприятие 8.3. Ищет по всем разделам: встроенный язык, объектная модель, язык запросов.";
@@ -43,10 +45,11 @@ internal sealed class Search1cHelpTool : IConfasterMCPTool
 		required = new string[1] { "query" }
 	});
 
-	internal Search1cHelpTool(HelpDatabase db, HelpIndexer indexer)
+	internal Search1cHelpTool(HelpDatabase db, HelpIndexer indexer, IHelpAliasResolver aliases)
 	{
 		_db = db;
 		_indexer = indexer;
+		_aliases = aliases;
 	}
 
 	public string Execute(JsonElement args)
@@ -64,21 +67,22 @@ internal sealed class Search1cHelpTool : IConfasterMCPTool
 		List<HelpSearchResult> list;
 		try
 		{
-			list = _db.Search(text, value2, category);
+			list = PrependAliases(_db.Search(text, value2, category), text, category, value2);
 		}
 		catch (SqliteException)
 		{
 			_indexer.RepairAndReindex();
-			return JsonSerializer.Serialize(new
+			return ToolJson.Serialize(new
 			{
 				error = "Индекс справки повреждён. Запущено восстановление, повторите запрос через 1-2 минуты."
 			});
 		}
 		if (list.Count == 0)
 		{
-			return JsonSerializer.Serialize(new
+			return ToolJson.Serialize(new
 			{
 				message = "По запросу ничего не найдено в справке 1С.",
+				total = 0,
 				results = Array.Empty<object>()
 			});
 		}
@@ -115,10 +119,65 @@ internal sealed class Search1cHelpTool : IConfasterMCPTool
 			stringBuilder6.AppendLine(ref handler);
 			stringBuilder.AppendLine();
 		}
-		return JsonSerializer.Serialize(new
+		List<object> results = new List<object>();
+		foreach (HelpSearchResult item in list)
+		{
+			results.Add(new
+			{
+				topic_id = item.TopicId,
+				title = item.Title,
+				excerpt = item.Excerpt
+			});
+		}
+		return ToolJson.Serialize(new
 		{
 			text = stringBuilder.ToString(),
-			total = list.Count
+			total = list.Count,
+			results
 		});
+	}
+
+	// Синоним из search-aliases.tsv ставится в начало выдачи: страницы (en)
+	// восстановлены из английского дубля, и без этого русский оператор находит
+	// только упоминания в других темах.
+	private List<HelpSearchResult> PrependAliases(List<HelpSearchResult> results, string query, string? category, int limit)
+	{
+		List<HelpSearchResult> list = new List<HelpSearchResult>();
+		HashSet<string> seen = new HashSet<string>(StringComparer.Ordinal);
+		foreach (string topicId in _aliases.Resolve(query, category))
+		{
+			if (!seen.Add(topicId))
+			{
+				continue;
+			}
+			(string? title, string? content) = _db.GetTopic(topicId);
+			if (title == null)
+			{
+				continue;
+			}
+			string excerpt = content ?? "";
+			if (excerpt.Length > 200)
+			{
+				excerpt = excerpt.Substring(0, 200);
+			}
+			list.Add(new HelpSearchResult
+			{
+				TopicId = topicId,
+				Title = title,
+				Excerpt = excerpt
+			});
+		}
+		foreach (HelpSearchResult item in results)
+		{
+			if (seen.Add(item.TopicId))
+			{
+				list.Add(item);
+			}
+		}
+		if (list.Count > limit)
+		{
+			list.RemoveRange(limit, list.Count - limit);
+		}
+		return list;
 	}
 }

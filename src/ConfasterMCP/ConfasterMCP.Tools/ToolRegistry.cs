@@ -19,6 +19,8 @@ internal sealed class ToolRegistry
 
 	private HelpIndexer? _helpIndexer;
 
+	private IHelpAliasResolver _helpAliases = HelpAliases.Empty;
+
 	private Database _db;
 
 	private ConfigRoots? _roots;
@@ -50,13 +52,16 @@ internal sealed class ToolRegistry
 
 	private void InitHelpTools()
 	{
-		if (HelpIndexer.FindPlatformPath() != null)
+		string? platformPath = HelpIndexer.FindPlatformPath();
+		if (platformPath != null)
 		{
 			try
 			{
 				_helpDb = new HelpDatabase();
 				_helpIndexer = new HelpIndexer(_helpDb);
-				RegisterHelpTools(_helpDb, _helpIndexer);
+				string helpDirectory = HelpIndexer.GetHelpDirectory(platformPath);
+				_helpAliases = HelpAliases.Load(helpDirectory, HelpIndexer.ExtractVersionFromPath(platformPath));
+				RegisterHelpTools(_helpDb, _helpIndexer, _helpAliases);
 				_helpIndexer.EnsureIndexed();
 			}
 			catch (Exception ex)
@@ -79,7 +84,7 @@ internal sealed class ToolRegistry
 		IndexManager indexManager = RegisterTools(roots);
 		if (_helpDb != null && _helpIndexer != null)
 		{
-			RegisterHelpTools(_helpDb, _helpIndexer);
+			RegisterHelpTools(_helpDb, _helpIndexer, _helpAliases);
 		}
 		if (!sync)
 		{
@@ -145,9 +150,9 @@ internal sealed class ToolRegistry
 		return indexManager;
 	}
 
-	private void RegisterHelpTools(HelpDatabase helpDb, HelpIndexer helpIndexer)
+	private void RegisterHelpTools(HelpDatabase helpDb, HelpIndexer helpIndexer, IHelpAliasResolver aliases)
 	{
-		Register(new Search1cHelpTool(helpDb, helpIndexer));
+		Register(new Search1cHelpTool(helpDb, helpIndexer, aliases));
 		Register(new Get1cHelpTopicTool(helpDb, helpIndexer));
 		Register(new List1cHelpVersionsTool(helpDb, helpIndexer));
 		Register(new Reindex1cHelpTool(helpIndexer));

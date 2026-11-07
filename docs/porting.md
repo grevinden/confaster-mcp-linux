@@ -56,8 +56,9 @@ benchmark и абсолютные пути корня.
 Справочные инструменты отдельной сверки не требуют: оригинал на Linux их не
 регистрирует. В порте проверены вручную — индекс платформы 8.3.27.2342,
 25 683 темы из трёх книг (`syntax`, `language`, `query`; повреждённые страницы
-восстановлены английским дублем), `search_1c_help` и `get_1c_help_topic`
-возвращают текст темы. Проверка автоматизирована: `scripts/check-help-index.py`.
+восстановлены английским дублем и находятся по русским синонимам),
+`search_1c_help` и `get_1c_help_topic` возвращают текст темы. Проверка
+автоматизирована: `scripts/check-help-index.py`.
 
 ## Статус инструментов на Linux
 
@@ -83,7 +84,10 @@ benchmark и абсолютные пути корня.
 | `ConfasterMCP.Help/HelpIndexer.cs` | `FindPlatformPath` ищет справку в порядке `CONFASTER_1C_HELP_PATH` → `1c-help/` рядом с бинарником → `/usr/share/confaster-mcp/1c-help` → установленная платформа; `GetHelpDirectory` берёт `bin/`, если там `.hbk`, иначе корень версии; повреждённые страницы заменяются английским дублем (`IndexFallback`), в stderr пишутся `HELP_STATUS:parsed:<category>:<n>` и `HELP_STATUS:fallback:<category>:<n>` |
 | `ConfasterMCP.Help/HbkParser.cs` | zip внутри `.hbk` разбирается по локальным заголовкам вместо `ZipArchive`: без central directory видны все три книги, а не только `shcntx_ru.hbk`; запись принимается при совпадении и `uncompressed size`, и CRC-32, имя обрезанной записи попадает в список повреждённых |
 | `ConfasterMCP.Help/HelpDatabase.cs` | каталог индекса: `ApplicationData` (на Linux — только при заданном `XDG_CONFIG_HOME`), иначе `~/.config`; поиск пробует фразу, затем `AND` по словам |
-| `data/1c-help/` | файлы справки платформы 1С в поставке, включая английские дубли |
+| `ConfasterMCP.Help/HelpAliases.cs` | новый файл: русские поисковые синонимы для восстановленных `(en)`-страниц, читаются из `search-aliases.tsv` |
+| `ConfasterMCP.Tools/Search1cHelpTool.cs` | синоним ставится в начало выдачи; в ответе есть массив `results` (`topic_id`, `title`, `excerpt`) |
+| `ConfasterMCP.Tools/ToolRegistry.cs` | загружает `HelpAliases` рядом с книгами справки и передаёт в инструмент поиска |
+| `data/1c-help/` | файлы справки платформы 1С в поставке, включая английские дубли и `search-aliases.tsv` |
 | `libtree-sitter-bsl.so` | собрана из исходников грамматики вместо Windows-DLL |
 | пакетирование | `.deb` и бинарный архив, self-contained + ReadyToRun |
 

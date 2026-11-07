@@ -315,7 +315,7 @@ internal sealed class HelpIndexer
 		return result;
 	}
 
-	private static string ExtractVersionFromPath(string platformPath)
+	internal static string ExtractVersionFromPath(string platformPath)
 	{
 		string text = Path.GetFileName(platformPath) ?? "unknown";
 		if (!Regex.IsMatch(text, "^\\d+\\.\\d+\\.\\d+\\.\\d+$"))

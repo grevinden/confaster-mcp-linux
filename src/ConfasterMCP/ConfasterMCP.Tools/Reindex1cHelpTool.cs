@@ -34,7 +34,7 @@ internal sealed class Reindex1cHelpTool : IConfasterMCPTool
 		_indexer.ForceReindex();
 		return JsonSerializer.Serialize(new
 		{
-			message = "Переиндексация справки запущена. Это может занять 1-3 минуты."
+			message = "Переиндексация справки запущена. Это может занять 3-5 минут."
 		});
 	}
 }

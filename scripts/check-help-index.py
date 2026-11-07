@@ -170,6 +170,33 @@ def main():
         if "%s/query/" % version not in (datetime_search.get("text") or ""):
             problems.append("поиск «DATETIME» не находит тем языка запросов")
 
+        # Русские синонимы из search-aliases.tsv должны ставить (en)-страницу
+        # первой, а не терять её среди упоминаний в других темах.
+        alias_cases = (
+            ("Попытка", None, "language/struct_TryCatch"),
+            ("Пока", None, "language/struct_While"),
+            ("ВызватьИсключение", "language", "language/struct_Raise"),
+            ("ДОБАВИТЬКДАТЕ", None, "query/DATEADD"),
+            ("СТРОКА", "query", "query/STRING"),
+        )
+        for query, category, topic in alias_cases:
+            args = {"query": query, "limit": 3}
+            if category:
+                args["category"] = category
+            found = call("search_1c_help", args)
+            expected = "%s/%s" % (version, topic)
+            first = None
+            for line in (found.get("text") or "").splitlines():
+                if "topic_id:" in line:
+                    first = line.split("topic_id:", 1)[1].strip()
+                    break
+            if first != expected:
+                problems.append("русский синоним «%s» не находит %s первым: %r"
+                                % (query, expected, first))
+            results = found.get("results") or []
+            if not results or results[0].get("topic_id") != expected:
+                problems.append("search_1c_help не отдаёт структурированный results для «%s»" % query)
+
         words = call("search_1c_help", {"query": "ВЫБРАТЬ ИЗ ГДЕ", "limit": 3})
         if not words.get("total"):
             problems.append("запрос из нескольких слов не находит ничего (откат на AND не работает)")

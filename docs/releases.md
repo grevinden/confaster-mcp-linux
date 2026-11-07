@@ -3,7 +3,7 @@
 ## Версионирование
 
 - `VERSION` в корне — единственный источник версии, формат `<апстрим>-port.<N>`.
-- Тег GitHub — `v` + `VERSION`, например `v1.0.0-port.9`.
+- Тег GitHub — `v` + `VERSION`, например `v1.0.0-port.10`.
 - `CHANGELOG.md` — история: таблица соответствия версий и изменения по релизам.
 - Точный апстрим определяется по `AssemblyInformationalVersion` из
   `ConfasterMCP.dll`: `1.0.0+0c31141d…` — версия 1.0.0 и коммит апстрима.
@@ -41,10 +41,11 @@ scripts/check-upstream.sh
        original/Libs/ConfasterMCP/ConfasterMCP.dll
    ```
 
-3. **Перенести исходник и вернуть правки порта.** Правок ровно три файла
-   (см. [porting.md](porting.md)): `ConfasterMCP.csproj`,
-   `Properties/AssemblyInfo.cs`, `ConfasterMCP.Help/HelpIndexer.cs`,
-   `ConfasterMCP.Help/HbkParser.cs`, `ConfasterMCP.Help/HelpDatabase.cs`.
+3. **Перенести исходник и вернуть правки порта.** Список правок — в таблице
+   «Отличия от оригинала» в [porting.md](porting.md): `ConfasterMCP.csproj`,
+   `Properties/AssemblyInfo.cs`, файлы `ConfasterMCP.Help/*` (`HelpIndexer`,
+   `HbkParser`, `HelpDatabase`, `HelpAliases`) и
+   `ConfasterMCP.Tools/{Search1cHelpTool,ToolRegistry,Reindex1cHelpTool}.cs`.
    Рабочий приём: сохранить эти файлы, заменить остальной `src/ConfasterMCP`
    свежей декомпиляцией, вернуть файлы на место. Если апстрим менял файлы
    справки, правки нужно наложить заново.

@@ -14,7 +14,7 @@
 Пакет self-contained: dotnet-runtime не нужен.
 
 ```bash
-sudo dpkg -i confaster-mcp_1.0.0-port.9_amd64.deb
+sudo dpkg -i confaster-mcp_1.0.0-port.10_amd64.deb
 # если dpkg сообщит о неудовлетворённых зависимостях:
 sudo apt-get install -f
 ```
@@ -42,7 +42,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 ## Из бинарного архива
 
 ```bash
-tar xzf confaster-mcp_1.0.0-port.9_linux-amd64.tar.gz -C ~/confaster-mcp
+tar xzf confaster-mcp_1.0.0-port.10_linux-amd64.tar.gz -C ~/confaster-mcp
 ~/confaster-mcp/ConfasterMCP --export-root /путь/к/выгрузке
 ```
 
