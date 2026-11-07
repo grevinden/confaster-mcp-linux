@@ -13,12 +13,13 @@ MCP-сервер «1c-search» из состава [Confaster](https://confaster
 |---|---|
 | 17 инструментов поиска по коду (`search_code`, `sync_index`, `stats`, …) | работает |
 | Справка 1С (`search_1c_help`, `get_1c_help_topic`, `list_1c_help_versions`, `reindex_1c_help`) | работает, платформа ищется в `/opt/1cv8` и `/opt/1C/1cv8` |
-| Символьные инструменты (`find_symbol`, `find_references`, `impact_analysis`, …) | помечены в выдаче как недоступные, пока не собран `libtree-sitter-bsl.so` (см. ниже) |
+| Символьные инструменты (`find_symbol`, `get_symbol_context`, `find_references`, `impact_analysis`) | работает через собранную `libtree-sitter-bsl.so` (`scripts/build-tree-sitter.sh`) |
 | GUI-приложение Confaster.exe | не портируется — только MCP-сервер |
 
 ## Требования
 
 - .NET 8 runtime (`Microsoft.NETCore.App` 8.0+): `dotnet --list-runtimes`.
+- `gcc` — для сборки нативной библиотеки грамматики при сборке порта.
 - Выгрузка конфигурации 1С (каталог с `.xml`/`.bsl`) — то же, что подаётся оригинальному серверу на Windows.
 
 ## Сборка и запуск
@@ -63,6 +64,9 @@ scripts/run-mcp.sh --export-root /путь/к/выгрузке   # запуск 
 ## tree-sitter
 
 Символьные инструменты требуют нативную библиотеку грамматики BSL. Сервер ищет
-`libtree-sitter-bsl.so` рядом с `ConfasterMCP.dll` (и в системных путях).
-Без неё сервер полностью работоспособен, а в stderr при старте печатается
-предупреждение. Сборка библиотеки — `third_party/` (см. историю коммитов).
+`libtree-sitter-bsl.so` рядом с `ConfasterMCP.dll` (и в системных путях); без неё
+остальные инструменты работают как обычно. `scripts/build.sh` собирает её автоматически
+(нужен `gcc`), отдельный вызов: `scripts/build-tree-sitter.sh [каталог-назначения]`.
+Собирается единой библиотекой из runtime tree-sitter и генерированной грамматики
+[alkoleft/tree-sitter-bsl](https://github.com/alkoleft/tree-sitter-bsl), версии
+зафиксированы в скрипте.
