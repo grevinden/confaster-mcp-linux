@@ -6,7 +6,7 @@ set -euo pipefail
 URL="https://confaster.ru/download/"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$ROOT/original"
-TMP="$(mktemp -d /tmp/opencode/confaster-fetch.XXXXXX)"
+TMP="$(mktemp -d ${TMPDIR:-/tmp}/confaster-fetch.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT
 
 echo "Скачиваю $URL ..."

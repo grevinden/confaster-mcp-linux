@@ -52,7 +52,8 @@ scripts/check-upstream.sh
 
    ```bash
    scripts/build.sh
-   scripts/compare-upstream.sh   # 17/17 идентичных, 0 расхождений
+   scripts/compare-upstream.sh          # 17/17 идентичных схем, 0 расхождений
+   scripts/compare-behavior.sh <выгрузка>  # фактические ответы совпадают
    scripts/smoke-test.sh
    ```
 

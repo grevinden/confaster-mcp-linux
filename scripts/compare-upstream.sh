@@ -13,7 +13,7 @@ PORT="$ROOT/dist/ConfasterMCP.dll"
 [ -f "$ORIG" ] || { echo "Нет оригинала: $ORIG (scripts/fetch-original.sh)" >&2; exit 1; }
 [ -f "$PORT" ] || { echo "Нет порта: $PORT (scripts/build.sh)" >&2; exit 1; }
 
-TMP="$(mktemp -d /tmp/opencode/compare.XXXXXX)"
+TMP="$(mktemp -d ${TMPDIR:-/tmp}/confaster-compare.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/root" "$TMP/lib"
 

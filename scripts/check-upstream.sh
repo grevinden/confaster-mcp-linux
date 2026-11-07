@@ -7,7 +7,7 @@
 # перекомпиляция, см. docs/releases.md), 1 — ошибка.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TMP="$(mktemp -d /tmp/opencode/check-upstream.XXXXXX)"
+TMP="$(mktemp -d ${TMPDIR:-/tmp}/confaster-upstream.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT
 
 CURRENT="$(tr -d '[:space:]' < "$ROOT/VERSION")"
@@ -18,10 +18,10 @@ SHA="$(sha256sum "$TMP/Confaster.zip" | cut -d' ' -f1)"
 echo "sha256 архива: $SHA"
 
 unzip -q "$TMP/Confaster.zip" -d "$TMP/x"
-DLL="$(find "$TMP/x" -name ConfasterMCP.dll | head -1)"
+DLL="$(find "$TMP/x" -name ConfasterMCP.dll | head -1 || true)"
 [ -n "$DLL" ] || { echo "В архиве нет ConfasterMCP.dll" >&2; exit 1; }
 
-IVER="$(strings "$DLL" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\+[0-9a-f]{40}' | head -1)"
+IVER="$(strings "$DLL" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\+[0-9a-f]{40}' | head -1 || true)"
 [ -n "$IVER" ] || { echo "Не удалось прочитать AssemblyInformationalVersion" >&2; exit 1; }
 UP_VER="${IVER%%+*}"
 UP_COMMIT="${IVER##*+}"

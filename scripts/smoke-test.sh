@@ -12,7 +12,7 @@ case "$DLL" in
     *)     CMD=("$DLL") ;;
 esac
 if [ -z "$EXPORT" ]; then
-    EXPORT="$(mktemp -d /tmp/opencode/smoke-export.XXXXXX)"
+    EXPORT="$(mktemp -d ${TMPDIR:-/tmp}/confaster-smoke.XXXXXX)"
     trap 'rm -rf "$EXPORT"' EXIT
 fi
 
