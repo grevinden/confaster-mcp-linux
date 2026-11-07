@@ -17,7 +17,7 @@ Linux: поиск по выгрузкам конфигураций 1С — те�
 ## Быстрый старт
 
 ```bash
-sudo dpkg -i confaster-mcp_1.0.0-port.1_amd64.deb
+sudo dpkg -i confaster-mcp_1.0.0-port.2_amd64.deb
 ```
 
 Подключение в MCP-клиенте:
