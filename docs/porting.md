@@ -78,7 +78,8 @@ benchmark и абсолютные пути корня.
 |---|---|
 | `ConfasterMCP.csproj` | `net8.0`, зависимости через `PackageReference`, nullable-шум декомпилятора в `NoWarn` |
 | `Properties/AssemblyInfo.cs` | удалён служебный атрибут `RefSafetyRulesAttribute` от декомпилятора |
-| `ConfasterMCP.Help/HelpIndexer.cs` | `FindPlatformPath` знает `/opt/1cv8/x86_64`, `/opt/1C/1cv8/x86_64`, `/opt/1cv8`, `/opt/1C/1cv8`; `GetHelpDirectory` берёт `bin/`, если там `.hbk`, иначе корень версии |
+| `ConfasterMCP.Help/HelpIndexer.cs` | `FindPlatformPath` ищет справку в порядке `CONFASTER_1C_HELP_PATH` → `1c-help/` рядом с бинарником → `/usr/share/confaster-mcp/1c-help` → установленная платформа; `GetHelpDirectory` берёт `bin/`, если там `.hbk`, иначе корень версии |
+| `data/1c-help/` | файлы справки платформы 1С в поставке |
 | `libtree-sitter-bsl.so` | собрана из исходников грамматики вместо Windows-DLL |
 | пакетирование | `.deb` и бинарный архив, self-contained + ReadyToRun |
 
@@ -90,7 +91,7 @@ benchmark и абсолютные пути корня.
 - `PublishReadyToRun` — меньше времени до первого ответа;
 - единая `libtree-sitter-bsl.so` (рантайм + грамматика) — один `DllImport`;
 - индекс FTS5 с триграммами и инкрементальной синхронизацией;
-- поиск платформы 1С кешируется, справка индексируется один раз.
+- поиск каталога справки кешируется, справка индексируется один раз.
 
 ## Как перепроверить
 

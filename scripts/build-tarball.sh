@@ -18,6 +18,7 @@ rm -rf "$OUT"
 dotnet publish "$ROOT/src/ConfasterMCP" -c Release -r "$RID" \
     --self-contained true -p:PublishReadyToRun=true -o "$OUT"
 CC="$CC" "$ROOT/scripts/build-tree-sitter.sh" "$OUT"
+cp -r "$ROOT/data/1c-help" "$OUT/1c-help"
 
 mkdir -p "$ROOT/build"
 tar -czf "$ROOT/build/confaster-mcp_${VERSION}_linux-${ARCH}.tar.gz" -C "$OUT" .

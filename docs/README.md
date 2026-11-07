@@ -11,14 +11,14 @@
 | [usage.md](usage.md) | аргументы запуска, подключение MCP-клиентов, расширения |
 | [tools.md](tools.md) | все инструменты: параметры и назначение |
 | [architecture.md](architecture.md) | устройство порта, индекс, компоненты |
-| [porting.md](porting.md) | отличия от апстрима, аудит потерь, подтверждение паритета |
+| [porting.md](porting.md) | отличия от апстрима, подтверждение паритета |
 | [releases.md](releases.md) | версии, проверка новой версии апстрима, сборка релиза |
 | [troubleshooting.md](troubleshooting.md) | диагностика типовых проблем |
 
 Короткая шпаргалка:
 
 ```bash
-sudo dpkg -i confaster-mcp_1.0.0-port.5_amd64.deb     # установка
+sudo dpkg -i confaster-mcp_1.0.0-port.6_amd64.deb     # установка
 confaster-mcp --export-root /путь/к/выгрузке            # запуск (stdio)
 ```
 

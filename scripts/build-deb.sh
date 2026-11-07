@@ -25,6 +25,9 @@ dotnet publish "$ROOT/src/ConfasterMCP" -c Release -r "$RID" \
     --self-contained true -p:PublishReadyToRun=true -o "$APP"
 CC="$CC" "$ROOT/scripts/build-tree-sitter.sh" "$APP"
 
+mkdir -p "$STAGE/usr/share/confaster-mcp"
+cp -r "$ROOT/data/1c-help" "$STAGE/usr/share/confaster-mcp/1c-help"
+
 install -m 0755 "$ROOT/packaging/confaster-mcp" "$STAGE/usr/bin/confaster-mcp"
 install -m 0644 "$ROOT/CHANGELOG.md" "$STAGE/usr/share/doc/confaster-mcp/CHANGELOG.md"
 if [ -f "$ROOT/.github/README.md" ]; then

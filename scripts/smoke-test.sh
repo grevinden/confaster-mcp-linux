@@ -80,8 +80,9 @@ if info.get("name") != "1c-search":
 missing = core - names
 if missing:
     problems.append(f"нет основных инструментов: {sorted(missing)}")
-if len(names & help_tools) not in (0, 4):
-    problems.append(f"частичный набор справочных инструментов: {sorted(names & help_tools)}")
+missing_help = help_tools - names
+if missing_help:
+    problems.append(f"нет справочных инструментов: {sorted(missing_help)}")
 if problems:
     raise SystemExit("SMOKE FAIL: " + "; ".join(problems))
 print("SMOKE OK")

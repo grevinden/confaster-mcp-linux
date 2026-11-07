@@ -5,14 +5,16 @@
 - Linux x86_64 или arm64, glibc 2.31+.
 - `libicu` (для .NET; в `.deb` указан как зависимость).
 - Исходники конфигурации 1С: полная выгрузка из Конфигуратора (`Configuration.xml`, `*.bsl`) или проект 1C:EDT (`src/.../Module.bsl`). Подробности — [usage.md](usage.md).
-- Платформа 1С (необязательно) — для инструментов справки.
+
+Платформа 1С не требуется: справка `8.3.27.2342` входит в пакет, инструменты
+справки работают сразу после установки.
 
 ## Из пакета .deb
 
 Пакет self-contained: dotnet-runtime не нужен.
 
 ```bash
-sudo dpkg -i confaster-mcp_1.0.0-port.5_amd64.deb
+sudo dpkg -i confaster-mcp_1.0.0-port.6_amd64.deb
 # если dpkg сообщит о неудовлетворённых зависимостях:
 sudo apt-get install -f
 ```
@@ -23,6 +25,7 @@ sudo apt-get install -f
 |---|---|
 | `/usr/bin/confaster-mcp` | обёртка запуска |
 | `/usr/lib/confaster-mcp/` | приложение, .NET-рантайм, `libtree-sitter-bsl.so` |
+| `/usr/share/confaster-mcp/1c-help/` | справка платформы 1С (`*.hbk`) |
 | `/usr/share/doc/confaster-mcp/` | README, CHANGELOG, copyright |
 | `/usr/share/man/man1/confaster-mcp.1.gz` | man-страница |
 
@@ -39,9 +42,12 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 ## Из бинарного архива
 
 ```bash
-tar xzf confaster-mcp_1.0.0-port.5_linux-amd64.tar.gz -C ~/confaster-mcp
+tar xzf confaster-mcp_1.0.0-port.6_linux-amd64.tar.gz -C ~/confaster-mcp
 ~/confaster-mcp/ConfasterMCP --export-root /путь/к/выгрузке
 ```
+
+В архиве рядом с `ConfasterMCP` лежат `libtree-sitter-bsl.so` и каталог
+`1c-help/` со справкой платформы 1С.
 
 ## Из исходников
 

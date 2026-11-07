@@ -11,14 +11,18 @@
 
 ## Нет четырёх инструментов справки
 
-`HelpIndexer.FindPlatformPath()` не нашёл платформу. Ожидаемые пути:
+Справка входит в поставку. Проверьте, что каталог с ней на месте:
 
 ```text
-/opt/1cv8/x86_64/<версия>/      (или /opt/1cv8/<версия>/)
-/opt/1C/1cv8/x86_64/<версия>/
+<каталог приложения>/1c-help/<версия>/        (tar.gz, сборка из исходников)
+/usr/share/confaster-mcp/1c-help/<версия>/    (.deb)
 ```
 
-В каталоге версии должны лежать файлы справки `*.hbk` (`shcntx_ru.hbk` и др.).
+В каталоге версии должны лежать `shcntx_ru.hbk`, `shlang_ru.hbk`,
+`shquery_ru.hbk`. Порядок поиска: `CONFASTER_1C_HELP_PATH`, `1c-help/` рядом
+с бинарником, `/usr/share/confaster-mcp/1c-help`, установленная платформа 1С.
+Если задана `CONFASTER_1C_HELP_PATH`, она должна указывать на существующий
+каталог с `.hbk`. Состояние индекса видно по строкам `HELP_STATUS:` в stderr.
 
 ## «tree-sitter-bsl native library failed to load»
 

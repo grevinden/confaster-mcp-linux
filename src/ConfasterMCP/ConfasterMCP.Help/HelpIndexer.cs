@@ -181,6 +181,23 @@ internal sealed class HelpIndexer
 
 	internal static string? FindPlatformPath()
 	{
+		// Порядок поиска: явный путь, бандл рядом с бинарником (tarball),
+		// системный бандл (.deb), затем установленная платформа.
+		string text = FindHelpBundle(Environment.GetEnvironmentVariable("CONFASTER_1C_HELP_PATH"));
+		if (text != null)
+		{
+			return text;
+		}
+		text = FindHelpBundle(Path.Combine(AppContext.BaseDirectory, "1c-help"));
+		if (text != null)
+		{
+			return text;
+		}
+		text = FindHelpBundle("/usr/share/confaster-mcp/1c-help");
+		if (text != null)
+		{
+			return text;
+		}
 		string[] array = new string[6]
 		{
 			"C:\\Program Files\\1cv8",
@@ -192,20 +209,37 @@ internal sealed class HelpIndexer
 		};
 		foreach (string path in array)
 		{
-			if (Directory.Exists(path))
+			text = FindHelpBundle(path);
+			if (text != null)
 			{
-				List<string> list = (from d in Directory.EnumerateDirectories(path)
-					where Regex.IsMatch(Path.GetFileName(d), "^\\d+\\.\\d+\\.\\d+\\.\\d+$")
-					where File.Exists(Path.Combine(d, "bin", "shcntx_ru.hbk")) || File.Exists(Path.Combine(d, "shcntx_ru.hbk"))
-					orderby ParseVersion(Path.GetFileName(d)) descending
-					select d).ToList();
-				if (list.Count > 0)
-				{
-					return list[0];
-				}
+				return text;
 			}
 		}
 		return null;
+	}
+
+	// Каталог с .hbk (сам по себе или с подкаталогами версий); берётся старшая версия.
+	private static string? FindHelpBundle(string? root)
+	{
+		if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+		{
+			return null;
+		}
+		if (HasHelpFiles(root))
+		{
+			return root;
+		}
+		List<string> list = (from d in Directory.EnumerateDirectories(root)
+			where Regex.IsMatch(Path.GetFileName(d), "^\\d+\\.\\d+\\.\\d+\\.\\d+$")
+			where HasHelpFiles(d)
+			orderby ParseVersion(Path.GetFileName(d)) descending
+			select d).ToList();
+		return (list.Count > 0) ? list[0] : null;
+	}
+
+	private static bool HasHelpFiles(string dir)
+	{
+		return File.Exists(Path.Combine(dir, "bin", "shcntx_ru.hbk")) || File.Exists(Path.Combine(dir, "shcntx_ru.hbk"));
 	}
 
 	// Windows: справка в <версия>\bin\; Linux: файлы справки лежат в корне каталога версии.

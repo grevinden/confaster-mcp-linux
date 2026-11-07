@@ -36,8 +36,28 @@
 - `Properties/AssemblyInfo.cs` — атрибуты сборки без служебного
   `RefSafetyRulesAttribute`.
 
-`scripts/build.sh` выполняет `dotnet publish -c Release -o dist` и кладёт рядом
-нативную библиотеку. Запуск — `dotnet dist/ConfasterMCP.dll` или apphost.
+`scripts/build.sh` выполняет `dotnet publish -c Release -o dist`, кладёт рядом
+нативную библиотеку и копирует `data/1c-help` в `dist/1c-help`. Запуск —
+`dotnet dist/ConfasterMCP.dll` или apphost.
+
+## Справка платформы 1С
+
+`data/1c-help/<версия>/` — файлы справки, поставляемые вместе с портом:
+`shcntx_ru.hbk`, `shlang_ru.hbk`, `shquery_ru.hbk`. Имя каталога — точный номер
+версии платформы (`8.3.27.2342`); оно определяет версию индекса справки и
+префикс `topic_id`. Состав и источник описаны в
+`data/1c-help/<версия>/README.md`.
+
+Все сборочные скрипты копируют этот каталог в свои артефакты:
+
+| Скрипт | Куда попадает справка |
+|---|---|
+| `scripts/build.sh` | `dist/1c-help/` рядом с `ConfasterMCP.dll` |
+| `scripts/build-deb.sh` | `/usr/share/confaster-mcp/1c-help/` |
+| `scripts/build-tarball.sh` | `1c-help/` рядом с бинарником |
+
+Приложение ищет справку в порядке `CONFASTER_1C_HELP_PATH` → `1c-help/` рядом
+с бинарником → `/usr/share/confaster-mcp/1c-help` → установленная платформа 1С.
 
 ## Нативная библиотека tree-sitter
 
@@ -60,7 +80,9 @@
 1. `dotnet publish -r linux-x64|linux-arm64 --self-contained -p:PublishReadyToRun=true`
    (dotnet-runtime в зависимостях не нужен, старт быстрее);
 2. `libtree-sitter-bsl.so` в каталог приложения;
-3. раскладка `/usr/bin`, `/usr/lib/confaster-mcp`, `/usr/share/doc`, man;
-4. `dpkg-deb --build`.
+3. `data/1c-help` в `/usr/share/confaster-mcp/1c-help`;
+4. раскладка `/usr/bin`, `/usr/lib/confaster-mcp`, `/usr/share/doc`, man;
+5. `dpkg-deb --build`.
 
-`scripts/build-tarball.sh` делает то же без deb-обвязки.
+`scripts/build-tarball.sh` делает то же без deb-обвязки: справка кладётся
+каталогом `1c-help/` рядом с бинарником.
