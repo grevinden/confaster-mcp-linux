@@ -18,6 +18,10 @@ internal sealed class SymbolInfo
 
 	internal string? Directive { get; init; }
 
+	internal string? Annotation { get; init; }
+
+	internal string? AnnotationTarget { get; init; }
+
 	internal string? Parameters { get; init; }
 
 	internal string? CommentHead { get; init; }

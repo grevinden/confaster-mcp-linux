@@ -34,6 +34,18 @@ internal static class BslAstParser
 
 	private static volatile string? _initError;
 
+	private static readonly Dictionary<string, string> ExtensionAnnotations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+	{
+		["Перед"] = "Перед",
+		["Before"] = "Перед",
+		["После"] = "После",
+		["After"] = "После",
+		["Вместо"] = "Вместо",
+		["Around"] = "Вместо",
+		["ИзменениеИКонтроль"] = "ИзменениеИКонтроль",
+		["ChangeAndValidate"] = "ИзменениеИКонтроль"
+	};
+
 	internal static bool IsInitialized => _initOk;
 
 	internal static string? InitError => _initError;
@@ -329,7 +341,10 @@ internal static class BslAstParser
 		bool isAsync = DetectAsyncPrefix(node, source);
 		int num = (int)(Native.ts_node_start_point(node).Row + 1);
 		int endLine = (int)(Native.ts_node_end_point(node).Row + 1);
-		string directive = ExtractDirective(lines, num);
+		(string? directive, string? annotation, string? target) tuple = ExtractAnnotations(lines, num);
+		string item = tuple.directive;
+		string item2 = tuple.annotation;
+		string item3 = tuple.target;
 		string commentHead = ExtractCommentHead(lines, num);
 		List<(string, int)> calls = new List<(string, int)>();
 		HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -350,7 +365,9 @@ internal static class BslAstParser
 			EndLine = endLine,
 			IsExport = isExport,
 			IsAsync = isAsync,
-			Directive = directive,
+			Directive = item,
+			Annotation = item2,
+			AnnotationTarget = item3,
 			Parameters = text2,
 			CommentHead = commentHead,
 			Calls = calls
@@ -453,8 +470,9 @@ internal static class BslAstParser
 		return true;
 	}
 
-	private static string? ExtractDirective(string[] lines, int startLine1Based)
+	private static (string? directive, string? annotation, string? target) ExtractAnnotations(string[] lines, int startLine1Based)
 	{
+		List<string> list = new List<string>();
 		int num = startLine1Based - 2;
 		if (num >= lines.Length)
 		{
@@ -468,25 +486,55 @@ internal static class BslAstParser
 				num--;
 				continue;
 			}
-			if (text.StartsWith("//"))
+			if (!text.StartsWith('&'))
 			{
-				return null;
+				break;
 			}
-			if (text.StartsWith('&'))
-			{
-				int i;
-				for (i = 1; i < text.Length && (char.IsLetterOrDigit(text[i]) || text[i] == '_'); i++)
-				{
-				}
-				if (i <= 1)
-				{
-					return null;
-				}
-				return text.Substring(1, i - 1);
-			}
-			return null;
+			list.Add(text);
+			num--;
 		}
-		return null;
+		for (int i = Math.Max(0, startLine1Based - 1); i < lines.Length; i++)
+		{
+			string text2 = lines[i].Trim();
+			if (!text2.StartsWith('&'))
+			{
+				break;
+			}
+			list.Add(text2);
+		}
+		string text3 = null;
+		string text4 = null;
+		string text5 = null;
+		foreach (string item in list)
+		{
+			int j;
+			for (j = 1; j < item.Length && (char.IsLetterOrDigit(item[j]) || item[j] == '_'); j++)
+			{
+			}
+			if (j <= 1)
+			{
+				continue;
+			}
+			string text6 = item.Substring(1, j - 1);
+			if (ExtensionAnnotations.TryGetValue(text6, out string value))
+			{
+				if (text4 == null)
+				{
+					text4 = value;
+				}
+				int num2 = item.IndexOf('"', j);
+				int num3 = ((num2 >= 0) ? item.IndexOf('"', num2 + 1) : (-1));
+				if (num3 > num2 + 1 && text5 == null)
+				{
+					text5 = item.Substring(num2 + 1, num3 - num2 - 1).Trim();
+				}
+			}
+			else if (text3 == null)
+			{
+				text3 = text6;
+			}
+		}
+		return (directive: text3, annotation: text4, target: text5);
 	}
 
 	private static string? ExtractCommentHead(string[] lines, int startLine1Based)

@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Text;
-using ConfasterMCP.Indexing;
 using ConfasterMCP.Tools;
 using ConfasterMCP.TreeSitter;
 using ConfasterMCP.Util;
@@ -13,23 +11,30 @@ internal static class Program
 {
 	private static int Main(string[] args)
 	{
-		string text = null;
-		List<string> list = new List<string>();
-		for (int i = 0; i < args.Length - 1; i++)
+		string mainPath = null;
+		List<(string, string)> list = new List<(string, string)>();
+		for (int i = 0; i < args.Length; i++)
 		{
+			if (args[i] == "--no-index-admin")
+			{
+				ToolRegistry.IndexAdminDisabled = true;
+				continue;
+			}
+			if (i + 1 >= args.Length)
+			{
+				break;
+			}
 			if (args[i] == "--export-root")
 			{
-				text = args[i + 1];
+				mainPath = args[i + 1];
 				i++;
 			}
 			else if (args[i] == "--extension-root")
 			{
-				string text2 = args[i + 1];
-				int num = text2.IndexOf('|');
-				string text3 = ((num >= 0) ? text2.Substring(num + 1) : text2);
-				if (Directory.Exists(text3))
+				var (item, text) = ConfigRoots.ParseExtensionArg(args[i + 1]);
+				if (!string.IsNullOrWhiteSpace(text))
 				{
-					list.Add(text3);
+					list.Add((item, text));
 				}
 				i++;
 			}
@@ -61,22 +66,20 @@ internal static class Program
 		{
 			Console.Error.WriteLine("MCP_LOG: CRITICAL: tree-sitter-bsl native library failed to load: " + (BslAstParser.InitError ?? "unknown") + ". Symbol-based search tools (semantic_find, find_symbol, smart_find, get_symbol_context, find_references, impact_analysis, get_function_context, get_module_functions, find_function_in_object, get_object_structure, list_objects) will be unavailable. search_code, 1C help and COM-query tools continue to work. Reinstall Confaster.");
 		}
-		bool flag = !string.IsNullOrEmpty(text) && Directory.Exists(text);
-		if (!flag && list.Count > 0)
+		ConfigRoots configRoots = ConfigRoots.Build(mainPath, list);
+		if (configRoots != null)
 		{
-			text = list[0];
-			list.RemoveAt(0);
-			flag = true;
+			foreach (string warning in configRoots.Warnings)
+			{
+				Console.Error.WriteLine("MCP_LOG: WARNING: " + warning);
+			}
+			Console.Error.Flush();
 		}
 		ToolRegistry toolRegistry;
-		if (flag)
+		if (configRoots != null)
 		{
-			Database db = new Database(Path.Combine(text, ".index", "onec_search.db"));
 			FileCache fileCache = new FileCache();
-			List<string> extensionRoots = ((list.Count > 0) ? list : null);
-			IndexManager indexManager = new IndexManager(db, text, fileCache, extensionRoots);
-			FileScanner fileScanner = new FileScanner(db, text, fileCache, extensionRoots);
-			toolRegistry = new ToolRegistry(db, text, fileScanner, fileCache, indexManager, extensionRoots);
+			toolRegistry = new ToolRegistry(configRoots, fileCache);
 		}
 		else
 		{
@@ -85,25 +88,25 @@ internal static class Program
 		McpServer mcpServer = new McpServer(toolRegistry);
 		while (true)
 		{
-			string text4;
+			string text2;
 			try
 			{
-				text4 = Console.ReadLine();
+				text2 = Console.ReadLine();
 			}
 			catch
 			{
 				break;
 			}
-			if (text4 == null)
+			if (text2 == null)
 			{
 				break;
 			}
-			if (!string.IsNullOrWhiteSpace(text4))
+			if (!string.IsNullOrWhiteSpace(text2))
 			{
-				string text5 = mcpServer.HandleMessage(text4);
-				if (text5 != null)
+				string text3 = mcpServer.HandleMessage(text2);
+				if (text3 != null)
 				{
-					Console.WriteLine(text5);
+					Console.WriteLine(text3);
 					Console.Out.Flush();
 				}
 			}

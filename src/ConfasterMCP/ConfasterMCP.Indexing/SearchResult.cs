@@ -8,6 +8,8 @@ internal sealed class SearchResult
 
 	internal required string AbsolutePath { get; init; }
 
+	internal string? Configuration { get; init; }
+
 	internal required int LineNumber { get; init; }
 
 	internal required string LineText { get; init; }

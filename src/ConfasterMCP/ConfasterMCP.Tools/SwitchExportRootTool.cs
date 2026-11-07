@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
+using ConfasterMCP.Indexing;
+using ConfasterMCP.Util;
 
 namespace ConfasterMCP.Tools;
 
@@ -26,11 +29,16 @@ internal sealed class SwitchExportRootTool : IConfasterMCPTool
 			extension_roots = new
 			{
 				type = "array",
-				description = "Пути к папкам выгрузки расширений",
+				description = "Выгрузки расширений: путь к папке либо \"ИмяРасширения|путь\"",
 				items = new
 				{
 					type = "string"
 				}
+			},
+			sync = new
+			{
+				type = "boolean",
+				description = "false — только переключиться, индекс синхронизировать отдельным sync_index (по умолчанию true)"
 			}
 		},
 		required = new string[1] { "export_root" }
@@ -53,25 +61,26 @@ internal sealed class SwitchExportRootTool : IConfasterMCPTool
 		{
 			throw new DirectoryNotFoundException("Папка не существует: " + text);
 		}
-		List<string> list = null;
+		List<(string, string)> list = new List<(string, string)>();
 		if (args.TryGetProperty("extension_roots", out var value2) && value2.ValueKind == JsonValueKind.Array)
 		{
-			list = new List<string>();
 			foreach (JsonElement item in value2.EnumerateArray())
 			{
-				string text2 = item.GetString();
-				if (!string.IsNullOrWhiteSpace(text2) && Directory.Exists(text2))
+				string value3 = item.GetString();
+				if (!string.IsNullOrWhiteSpace(value3))
 				{
-					list.Add(text2);
+					list.Add(ConfigRoots.ParseExtensionArg(value3));
 				}
 			}
-			if (list.Count == 0)
-			{
-				list = null;
-			}
 		}
-		if (string.Equals(_registry.ExportRoot, text, StringComparison.OrdinalIgnoreCase) && ExtensionsEqual(_registry.ExtensionRoots, list))
+		ConfigRoots configRoots = ConfigRoots.Build(text, list) ?? throw new DirectoryNotFoundException("Папка не существует: " + text);
+		foreach (string warning in configRoots.Warnings)
 		{
+			Console.Error.WriteLine("MCP_LOG: WARNING: " + warning);
+		}
+		if (_registry.Roots != null && _registry.Roots.SameSetAs(configRoots))
+		{
+			_registry.Roots.AdoptBuildWarnings(configRoots);
 			return JsonSerializer.Serialize(new
 			{
 				status = "unchanged",
@@ -80,40 +89,46 @@ internal sealed class SwitchExportRootTool : IConfasterMCPTool
 			});
 		}
 		Console.Error.WriteLine("SEARCH_STATUS:switching to " + text);
-		var (num, num2, num3) = _registry.Reinitialize(text, list);
+		JsonElement value4;
+		bool flag = !args.TryGetProperty("sync", out value4) || value4.ValueKind != JsonValueKind.False;
+		int num;
+		int num2;
+		int num3;
+		try
+		{
+			(num, num2, num3) = _registry.Reinitialize(configRoots, flag);
+		}
+		catch (IndexBusyException ex)
+		{
+			return JsonSerializer.Serialize(new
+			{
+				status = "switched",
+				export_root = text,
+				extension_roots_count = configRoots.Extensions.Count(),
+				index_status = "busy",
+				message = ex.Message
+			});
+		}
+		if (!flag)
+		{
+			Console.Error.WriteLine("SEARCH_STATUS:switched, index sync pending");
+			return JsonSerializer.Serialize(new
+			{
+				status = "switched",
+				export_root = text,
+				extension_roots_count = configRoots.Extensions.Count(),
+				index_status = "pending"
+			});
+		}
 		Console.Error.WriteLine($"SEARCH_STATUS:ready:switched, indexed {num} new, {num2} updated, {num3} deleted");
 		return JsonSerializer.Serialize(new
 		{
 			status = "switched",
 			export_root = text,
-			extension_roots_count = (list?.Count ?? 0),
+			extension_roots_count = configRoots.Extensions.Count(),
 			added = num,
 			updated = num2,
 			deleted = num3
 		});
-	}
-
-	private static bool ExtensionsEqual(List<string>? a, List<string>? b)
-	{
-		if ((a == null || a.Count == 0) && (b == null || b.Count == 0))
-		{
-			return true;
-		}
-		if (a == null || b == null)
-		{
-			return false;
-		}
-		if (a.Count != b.Count)
-		{
-			return false;
-		}
-		for (int i = 0; i < a.Count; i++)
-		{
-			if (!string.Equals(a[i], b[i], StringComparison.OrdinalIgnoreCase))
-			{
-				return false;
-			}
-		}
-		return true;
 	}
 }

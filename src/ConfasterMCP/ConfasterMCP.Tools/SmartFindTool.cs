@@ -12,15 +12,13 @@ internal sealed class SmartFindTool : IConfasterMCPTool
 {
 	private readonly Database _db;
 
-	private readonly string _exportRoot;
-
 	private readonly FileCache _fileCache;
 
 	private readonly FileScanner _fileScanner;
 
 	public string Name => "smart_find";
 
-	public string Description => "Умный поиск функции/процедуры: находит символ и возвращает полный код за один вызов. Используй ВМЕСТО search_code когда знаешь имя функции.";
+	public string Description => "Умный поиск функции/процедуры: находит символ и возвращает полный код за один вызов. Используй ВМЕСТО search_code когда знаешь имя функции. Если метод перехвачен расширением (&Перед/&После/&Вместо), в ответе есть intercepted_by — код перехвата смотри по его absolute_path.";
 
 	public JsonElement InputSchema => JsonSerializer.SerializeToElement(new
 	{
@@ -42,10 +40,9 @@ internal sealed class SmartFindTool : IConfasterMCPTool
 		required = new string[1] { "query" }
 	});
 
-	internal SmartFindTool(Database db, string exportRoot, FileCache fileCache, FileScanner fileScanner)
+	internal SmartFindTool(Database db, FileCache fileCache, FileScanner fileScanner)
 	{
 		_db = db;
-		_exportRoot = exportRoot;
 		_fileCache = fileCache;
 		_fileScanner = fileScanner;
 	}
@@ -76,17 +73,17 @@ internal sealed class SmartFindTool : IConfasterMCPTool
 			});
 		}
 		SymbolResult symbolResult = (from s in list
-			orderby s.name.Equals(query, StringComparison.OrdinalIgnoreCase) ? 1 : 0 descending, s.is_export ? 1 : 0 descending
+			orderby s.name.Equals(query, StringComparison.OrdinalIgnoreCase) ? 1 : 0 descending, ConfigRoots.IsExtensionKey(s.Key) ? 1 : 0, s.is_export ? 1 : 0 descending
 			select s).First();
 		string code = null;
 		if (flag)
 		{
 			code = ReadSymbolCode(symbolResult);
 		}
-		return JsonSerializer.Serialize(new
+		return ToolJson.Serialize(new
 		{
 			symbols = list,
-			best = new { symbolResult.file, symbolResult.absolute_path, symbolResult.name, symbolResult.kind, symbolResult.start_line, symbolResult.end_line },
+			best = new { symbolResult.file, symbolResult.configuration, symbolResult.absolute_path, symbolResult.name, symbolResult.kind, symbolResult.start_line, symbolResult.end_line, symbolResult.extends, symbolResult.intercepted_by },
 			code = code
 		});
 	}
@@ -95,23 +92,14 @@ internal sealed class SmartFindTool : IConfasterMCPTool
 	{
 		try
 		{
-			string item = symbol.name.ToLowerInvariant();
-			using Database.OwnedReader ownedReader = _db.Query("SELECT file_path, start_line, end_line FROM symbols WHERE name_lower = @n AND start_line = @sl LIMIT 1", ("@n", item), ("@sl", symbol.start_line));
-			if (!ownedReader.Read())
-			{
-				return null;
-			}
-			string relativePath = ownedReader.GetString(0);
-			int @int = ownedReader.GetInt32(1);
-			int int2 = ownedReader.GetInt32(2);
-			string text = _fileScanner.ResolveFullPath(relativePath);
+			string text = _fileScanner.ResolveFullPath(symbol.Key);
 			if (text == null)
 			{
 				return null;
 			}
 			string[] lines = _fileCache.GetLines(text);
-			int num = Math.Max(0, @int - 1);
-			int num2 = Math.Min(lines.Length, int2);
+			int num = Math.Max(0, symbol.start_line - 1);
+			int num2 = Math.Min(lines.Length, symbol.end_line);
 			StringBuilder stringBuilder = new StringBuilder();
 			for (int i = num; i < num2; i++)
 			{

@@ -21,30 +21,31 @@ internal sealed class ToolRegistry
 
 	private Database _db;
 
-	private string _exportRoot;
+	private ConfigRoots? _roots;
 
-	private List<string>? _extensionRoots;
+	internal static bool IndexAdminDisabled { get; set; }
 
-	internal string ExportRoot => _exportRoot;
+	internal ConfigRoots? Roots => _roots;
 
-	internal List<string>? ExtensionRoots => _extensionRoots;
-
-	internal ToolRegistry(Database db, string exportRoot, FileScanner fileScanner, FileCache fileCache, IndexManager indexManager, List<string>? extensionRoots = null)
+	internal ToolRegistry(ConfigRoots roots, FileCache fileCache)
 	{
-		_db = db;
-		_exportRoot = exportRoot;
+		_roots = roots;
 		_fileCache = fileCache;
-		_extensionRoots = extensionRoots;
-		RegisterTools(db, exportRoot, fileScanner, fileCache, indexManager);
+		_db = OpenDatabase(roots);
+		RegisterTools(roots);
 		InitHelpTools();
 	}
 
 	internal ToolRegistry()
 	{
 		_db = null;
-		_exportRoot = "";
 		_fileCache = null;
 		InitHelpTools();
+	}
+
+	private static Database OpenDatabase(ConfigRoots roots)
+	{
+		return new Database(Path.Combine(roots.IndexRoot, ".index", "onec_search.db"));
 	}
 
 	private void InitHelpTools()
@@ -65,47 +66,83 @@ internal sealed class ToolRegistry
 		}
 	}
 
-	internal (int added, int updated, int deleted) Reinitialize(string newExportRoot, List<string>? extensionRoots = null)
+	internal (int added, int updated, int deleted) Reinitialize(ConfigRoots roots, bool sync = true)
 	{
 		lock (_db.WriteLock)
 		{
 			_db.Dispose();
 		}
 		_fileCache.Clear();
-		_exportRoot = newExportRoot;
-		_extensionRoots = extensionRoots;
-		string dbPath = Path.Combine(newExportRoot, ".index", "onec_search.db");
-		_db = new Database(dbPath);
-		FileScanner fileScanner = new FileScanner(_db, newExportRoot, _fileCache, extensionRoots);
-		IndexManager indexManager = new IndexManager(_db, newExportRoot, _fileCache, extensionRoots);
+		_roots = roots;
+		_db = OpenDatabase(roots);
 		_tools.Clear();
-		RegisterTools(_db, newExportRoot, fileScanner, _fileCache, indexManager);
+		IndexManager indexManager = RegisterTools(roots);
 		if (_helpDb != null && _helpIndexer != null)
 		{
 			RegisterHelpTools(_helpDb, _helpIndexer);
 		}
+		if (!sync)
+		{
+			return (added: 0, updated: 0, deleted: 0);
+		}
 		return indexManager.IncrementalSync();
 	}
 
-	private void RegisterTools(Database db, string exportRoot, FileScanner fileScanner, FileCache fileCache, IndexManager indexManager)
+	internal ConfigRoots? RefreshRoots()
 	{
+		ConfigRoots roots = _roots;
+		if (roots == null)
+		{
+			return null;
+		}
+		ConfigRoots configRoots;
+		try
+		{
+			configRoots = roots.Rebuild();
+		}
+		catch
+		{
+			return null;
+		}
+		if (configRoots == null || roots.LosesCertaintyTo(configRoots))
+		{
+			return null;
+		}
+		roots.AdoptBuildWarnings(configRoots);
+		if (roots.SameSetAs(configRoots) || !roots.SamePathsAs(configRoots))
+		{
+			return null;
+		}
+		return configRoots;
+	}
+
+	private IndexManager RegisterTools(ConfigRoots roots)
+	{
+		Database db = _db;
+		FileCache fileCache = _fileCache;
+		FileScanner fileScanner = new FileScanner(db, roots, fileCache);
+		IndexManager indexManager = new IndexManager(db, roots, fileCache, !IndexAdminDisabled);
 		Register(new SemanticFindTool(db, fileScanner, fileCache));
 		Register(new SearchCodeTool(fileScanner));
 		Register(new FindSymbolTool(db, fileScanner));
-		Register(new SmartFindTool(db, exportRoot, fileCache, fileScanner));
-		Register(new GetSymbolContextTool(db, exportRoot, fileCache, fileScanner));
-		Register(new GetFileContextTool(exportRoot, fileCache, fileScanner));
-		Register(new ListObjectsTool(db));
+		Register(new SmartFindTool(db, fileCache, fileScanner));
+		Register(new GetSymbolContextTool(db, fileCache, fileScanner));
+		Register(new GetFileContextTool(fileCache, fileScanner));
+		Register(new ListObjectsTool(db, roots));
 		Register(new GetObjectStructureTool(db, fileScanner));
 		Register(new FindReferencesTool(fileScanner));
 		Register(new ImpactAnalysisTool(fileScanner));
 		Register(new GetFunctionContextTool(db, fileScanner));
 		Register(new GetModuleFunctionsTool(db, fileScanner));
-		Register(new FindFunctionInObjectTool(db, exportRoot, fileCache, fileScanner));
-		Register(new StatsTool(db, exportRoot));
-		Register(new SyncIndexTool(indexManager));
-		Register(new BenchmarkTool(this));
-		Register(new SwitchExportRootTool(this));
+		Register(new FindFunctionInObjectTool(db, fileCache, fileScanner));
+		Register(new StatsTool(db, roots));
+		Register(new SyncIndexTool(this, indexManager));
+		if (!IndexAdminDisabled)
+		{
+			Register(new BenchmarkTool(this));
+			Register(new SwitchExportRootTool(this));
+		}
+		return indexManager;
 	}
 
 	private void RegisterHelpTools(HelpDatabase helpDb, HelpIndexer helpIndexer)

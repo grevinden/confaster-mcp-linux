@@ -12,6 +12,8 @@ internal sealed class ObjectMetadata
 
 	internal string? ExportPath { get; init; }
 
+	internal bool Adopted { get; set; }
+
 	internal List<string> Synonyms { get; } = new List<string>();
 
 	internal List<ObjectItemInfo> Items { get; } = new List<ObjectItemInfo>();

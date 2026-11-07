@@ -11,11 +11,13 @@ internal sealed class FindSymbolTool : IConfasterMCPTool
 {
 	private readonly Database _db;
 
-	private readonly FileScanner? _fileScanner;
+	private readonly FileScanner _fileScanner;
+
+	internal const string SymbolColumns = "id, file_path, name, kind, start_line, end_line, is_export, is_async, directive, annotation, annotation_target";
 
 	public string Name => "find_symbol";
 
-	public string Description => "Найти процедуру или функцию по имени в индексе конфигурации 1С. Возвращает файл и номера строк определения.";
+	public string Description => "Найти процедуру или функцию по имени в индексе конфигурации 1С (основная конфигурация и расширения). Возвращает файл и номера строк определения; для метода основной конфигурации — методы расширений, которые его перехватывают (&Перед/&После/&Вместо).";
 
 	public JsonElement InputSchema => JsonSerializer.SerializeToElement(new
 	{
@@ -43,7 +45,11 @@ internal sealed class FindSymbolTool : IConfasterMCPTool
 		required = new string[1] { "query" }
 	});
 
-	internal FindSymbolTool(Database db, FileScanner? fileScanner = null)
+	private string Known => _fileScanner.Roots.KnownKeysSql("file_path");
+
+	private string KnownS => _fileScanner.Roots.KnownKeysSql("s.file_path");
+
+	internal FindSymbolTool(Database db, FileScanner fileScanner)
 	{
 		_db = db;
 		_fileScanner = fileScanner;
@@ -62,7 +68,7 @@ internal sealed class FindSymbolTool : IConfasterMCPTool
 		}
 		value3 = Math.Clamp(value3, 1, 100);
 		List<SymbolResult> list = FindSymbols(text, exact, value3);
-		return JsonSerializer.Serialize(new
+		return ToolJson.Serialize(new
 		{
 			symbols = list,
 			total = list.Count
@@ -71,11 +77,18 @@ internal sealed class FindSymbolTool : IConfasterMCPTool
 
 	internal List<SymbolResult> FindSymbols(string query, bool exact, int limit)
 	{
+		List<SymbolResult> list = FindSymbolsCore(query, exact, limit);
+		ExtensionLinks.FillInterceptors(_db, _fileScanner.Roots, list);
+		return list;
+	}
+
+	private List<SymbolResult> FindSymbolsCore(string query, bool exact, int limit)
+	{
 		List<SymbolResult> list = new List<SymbolResult>();
 		string text = query.ToLowerInvariant();
 		if (exact)
 		{
-			AddResults(list, "SELECT id, file_path, name, kind, start_line, end_line, is_export, is_async, directive FROM symbols WHERE name_lower = @q LIMIT @l", text, limit);
+			AddResults(list, $"SELECT {"id, file_path, name, kind, start_line, end_line, is_export, is_async, directive, annotation, annotation_target"} FROM symbols WHERE {Known} AND name_lower = @q LIMIT @l", text, limit);
 			return list;
 		}
 		if (query.Length >= 3)
@@ -88,15 +101,15 @@ internal sealed class FindSymbolTool : IConfasterMCPTool
 		}
 		if (list.Count < limit)
 		{
-			AddResults(list, "SELECT id, file_path, name, kind, start_line, end_line, is_export, is_async, directive FROM symbols WHERE name_lower = @q LIMIT @l", text, limit - list.Count);
+			AddResults(list, $"SELECT {"id, file_path, name, kind, start_line, end_line, is_export, is_async, directive, annotation, annotation_target"} FROM symbols WHERE {Known} AND name_lower = @q LIMIT @l", text, limit - list.Count);
 		}
 		if (list.Count < limit)
 		{
-			AddResults(list, "SELECT id, file_path, name, kind, start_line, end_line, is_export, is_async, directive FROM symbols WHERE name_lower LIKE @q || '%' AND name_lower != @q2 LIMIT @l", text, limit - list.Count, text);
+			AddResults(list, $"SELECT {"id, file_path, name, kind, start_line, end_line, is_export, is_async, directive, annotation, annotation_target"} FROM symbols WHERE {Known} AND name_lower LIKE @q || '%' AND name_lower != @q2 LIMIT @l", text, limit - list.Count, text);
 		}
 		if (list.Count < limit && query.Length < 3)
 		{
-			AddResults(list, "SELECT id, file_path, name, kind, start_line, end_line, is_export, is_async, directive FROM symbols WHERE name_lower LIKE '%' || @q || '%' AND name_lower NOT LIKE @q || '%' LIMIT @l", text, limit - list.Count);
+			AddResults(list, $"SELECT {"id, file_path, name, kind, start_line, end_line, is_export, is_async, directive, annotation, annotation_target"} FROM symbols WHERE {Known} AND name_lower LIKE '%' || @q || '%' AND name_lower NOT LIKE @q || '%' LIMIT @l", text, limit - list.Count);
 		}
 		return list;
 	}
@@ -106,7 +119,7 @@ internal sealed class FindSymbolTool : IConfasterMCPTool
 		HashSet<long> hashSet = new HashSet<long>(results.Select((SymbolResult r) => r.Id));
 		try
 		{
-			using Database.OwnedReader ownedReader = _db.Query("\n                    SELECT s.id, s.file_path, s.name, s.kind, s.start_line, s.end_line, s.is_export, s.is_async, s.directive\n                    FROM symbols_fts fts\n                    JOIN symbols s ON fts.rowid = s.id\n                    WHERE symbols_fts MATCH @q\n                    ORDER BY rank\n                    LIMIT @l", ("@q", query), ("@l", limit));
+			using Database.OwnedReader ownedReader = _db.Query($"\n                    SELECT s.{"id, file_path, name, kind, start_line, end_line, is_export, is_async, directive, annotation, annotation_target".Replace(", ", ", s.")}\n                    FROM symbols_fts fts\n                    JOIN symbols s ON fts.rowid = s.id\n                    WHERE symbols_fts MATCH @q AND {KnownS}\n                    ORDER BY rank\n                    LIMIT @l", ("@q", query), ("@l", limit));
 			while (ownedReader.Read())
 			{
 				long @int = ownedReader.GetInt64(0);
@@ -151,21 +164,33 @@ internal sealed class FindSymbolTool : IConfasterMCPTool
 		return "\"" + query.Replace("\"", "\"\"") + "\"";
 	}
 
-	private SymbolResult ReadSymbol(Database.OwnedReader reader)
+	internal SymbolResult ReadSymbol(Database.OwnedReader reader)
 	{
-		string relativePath = reader.GetString(1);
+		return ReadSymbol(_fileScanner, reader);
+	}
+
+	internal static SymbolResult ReadSymbol(FileScanner fileScanner, Database.OwnedReader reader)
+	{
+		string key = reader.GetString(1);
+		string name = reader.GetString(2);
+		string annotation = (reader.IsDBNull(9) ? null : reader.GetString(9));
+		string target = (reader.IsDBNull(10) ? null : reader.GetString(10));
+		ConfigRoots roots = fileScanner.Roots;
 		return new SymbolResult
 		{
 			Id = reader.GetInt64(0),
-			file = PathHelper.ToDisplayPath(relativePath),
-			absolute_path = _fileScanner?.ResolveFullPath(relativePath),
-			name = reader.GetString(2),
+			Key = key,
+			file = ConfigRoots.DisplayPath(key),
+			configuration = roots.LabelOf(key),
+			absolute_path = fileScanner.ResolveFullPath(key),
+			name = name,
 			kind = reader.GetString(3),
 			start_line = reader.GetInt32(4),
 			end_line = reader.GetInt32(5),
 			is_export = (reader.GetInt32(6) != 0),
 			is_async = (reader.GetInt32(7) != 0),
-			directive = (reader.IsDBNull(8) ? null : reader.GetString(8))
+			directive = (reader.IsDBNull(8) ? null : reader.GetString(8)),
+			extends = ExtensionLinks.DescribeTarget(key, annotation, target)
 		};
 	}
 }

@@ -1,10 +1,16 @@
+using System.Collections.Generic;
+
 namespace ConfasterMCP.Tools;
 
 internal sealed class SymbolResult
 {
 	internal long Id { get; init; }
 
+	internal string Key { get; init; } = "";
+
 	public string file { get; init; } = "";
+
+	public string? configuration { get; init; }
 
 	public string? absolute_path { get; init; }
 
@@ -21,4 +27,8 @@ internal sealed class SymbolResult
 	public bool is_async { get; init; }
 
 	public string? directive { get; init; }
+
+	public object? extends { get; init; }
+
+	public List<ExtensionLinks.Interceptor>? intercepted_by { get; set; }
 }

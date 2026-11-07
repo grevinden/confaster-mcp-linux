@@ -12,15 +12,13 @@ internal sealed class FindFunctionInObjectTool : IConfasterMCPTool
 {
 	private readonly Database _db;
 
-	private readonly string _exportRoot;
-
 	private readonly FileCache _fileCache;
 
 	private readonly FileScanner _fileScanner;
 
 	public string Name => "find_function_in_object";
 
-	public string Description => "Найти функцию/процедуру внутри конкретного объекта 1С. Возвращает список функций объекта + код лучшего совпадения.";
+	public string Description => "Найти функцию/процедуру внутри конкретного объекта 1С (во всех его модулях — и в основной конфигурации, и в расширениях, заимствовавших объект). Возвращает список функций объекта + код лучшего совпадения.";
 
 	public JsonElement InputSchema => JsonSerializer.SerializeToElement(new
 	{
@@ -36,15 +34,19 @@ internal sealed class FindFunctionInObjectTool : IConfasterMCPTool
 			{
 				type = "string",
 				description = "Ключевое слово для фильтрации функций. Если не указано — возвращает все функции объекта."
+			},
+			configuration = new
+			{
+				type = "string",
+				description = "Только одна конфигурация: имя расширения или 'основная'"
 			}
 		},
 		required = new string[1] { "object" }
 	});
 
-	internal FindFunctionInObjectTool(Database db, string exportRoot, FileCache fileCache, FileScanner fileScanner)
+	internal FindFunctionInObjectTool(Database db, FileCache fileCache, FileScanner fileScanner)
 	{
 		_db = db;
-		_exportRoot = exportRoot;
 		_fileCache = fileCache;
 		_fileScanner = fileScanner;
 	}
@@ -55,47 +57,45 @@ internal sealed class FindFunctionInObjectTool : IConfasterMCPTool
 		string text = (args.TryGetProperty("object", out value) ? (value.GetString() ?? "") : "");
 		JsonElement value2;
 		string hint = (args.TryGetProperty("function_hint", out value2) ? value2.GetString() : null);
+		JsonElement value3;
+		string name = (args.TryGetProperty("configuration", out value3) ? value3.GetString() : null);
 		if (string.IsNullOrEmpty(text))
 		{
 			return "{\"error\": \"object is required\"}";
 		}
+		ConfigRoots roots = _fileScanner.Roots;
+		if (roots.IsUnknownName(name, out ConfigRoot root))
+		{
+			return ToolJson.UnknownConfiguration(roots, name);
+		}
 		string text2 = ResolveObjectPath(text);
+		string text3 = ((root != null) ? roots.RootLike("file_path", "@p", root) : ConfigRoots.AnyRootLike("file_path", "@p")) + " AND " + roots.KnownKeysSql("file_path");
 		List<SymbolResult> list = new List<SymbolResult>();
-		string text3 = "\n                SELECT id, file_path, name, kind, start_line, end_line, is_export, is_async, directive\n                FROM symbols\n                WHERE file_path LIKE @p";
+		string text4 = "\n                SELECT id, file_path, name, kind, start_line, end_line, is_export, is_async, directive, annotation, annotation_target\n                FROM symbols\n                WHERE " + text3;
 		List<(string, object)> list2 = new List<(string, object)> { ("@p", text2 + "%") };
 		if (!string.IsNullOrEmpty(hint))
 		{
-			text3 += " AND name_lower LIKE @h";
+			text4 += " AND name_lower LIKE @h";
 			list2.Add(("@h", "%" + hint.ToLowerInvariant() + "%"));
 		}
-		text3 += " ORDER BY file_path, start_line LIMIT 200";
-		using Database.OwnedReader ownedReader = _db.Query(text3, list2.ToArray());
-		while (ownedReader.Read())
+		text4 += " ORDER BY (file_path LIKE '@%'), file_path, start_line LIMIT 200";
+		using (Database.OwnedReader ownedReader = _db.Query(text4, list2.ToArray()))
 		{
-			string relativePath = ownedReader.GetString(1);
-			list.Add(new SymbolResult
+			while (ownedReader.Read())
 			{
-				Id = ownedReader.GetInt64(0),
-				file = PathHelper.ToDisplayPath(relativePath),
-				absolute_path = _fileScanner.ResolveFullPath(relativePath),
-				name = ownedReader.GetString(2),
-				kind = ownedReader.GetString(3),
-				start_line = ownedReader.GetInt32(4),
-				end_line = ownedReader.GetInt32(5),
-				is_export = (ownedReader.GetInt32(6) != 0),
-				is_async = (ownedReader.GetInt32(7) != 0),
-				directive = (ownedReader.IsDBNull(8) ? null : ownedReader.GetString(8))
-			});
+				list.Add(FindSymbolTool.ReadSymbol(_fileScanner, ownedReader));
+			}
 		}
+		ExtensionLinks.FillInterceptors(_db, roots, list);
 		string best_match_code = null;
 		if (list.Count > 0 && !string.IsNullOrEmpty(hint))
 		{
 			SymbolResult symbol = (from f in list
-				orderby f.name.Equals(hint, StringComparison.OrdinalIgnoreCase) ? 1 : 0 descending, f.is_export ? 1 : 0 descending
+				orderby f.name.Equals(hint, StringComparison.OrdinalIgnoreCase) ? 1 : 0 descending, ConfigRoots.IsExtensionKey(f.Key) ? 1 : 0, f.is_export ? 1 : 0 descending
 				select f).First();
 			best_match_code = ReadCode(symbol);
 		}
-		return JsonSerializer.Serialize(new
+		return ToolJson.Serialize(new
 		{
 			@object = text,
 			functions = list,
@@ -104,7 +104,7 @@ internal sealed class FindFunctionInObjectTool : IConfasterMCPTool
 		});
 	}
 
-	private string ResolveObjectPath(string objectName)
+	private static string ResolveObjectPath(string objectName)
 	{
 		int num = objectName.IndexOf('.');
 		if (num > 0)
@@ -113,27 +113,21 @@ internal sealed class FindFunctionInObjectTool : IConfasterMCPTool
 			string text2 = objectName.Substring(num + 1);
 			if (PathHelper.XmlTagToTypeFolder.TryGetValue(text, out string value))
 			{
-				return value + "/" + text2;
+				return value + "/" + text2 + "/";
 			}
 			if (PathHelper.TypeFolderToXmlTag.ContainsKey(text))
 			{
-				return text + "/" + text2;
+				return text + "/" + text2 + "/";
 			}
 		}
-		return "%/" + objectName;
+		return "%/" + objectName + "/";
 	}
 
 	private string? ReadCode(SymbolResult symbol)
 	{
 		try
 		{
-			using Database.OwnedReader ownedReader = _db.Query("SELECT file_path FROM symbols WHERE id = @id", ("@id", symbol.Id));
-			if (!ownedReader.Read())
-			{
-				return null;
-			}
-			string relativePath = ownedReader.GetString(0);
-			string text = _fileScanner.ResolveFullPath(relativePath);
+			string text = _fileScanner.ResolveFullPath(symbol.Key);
 			if (text == null)
 			{
 				return null;

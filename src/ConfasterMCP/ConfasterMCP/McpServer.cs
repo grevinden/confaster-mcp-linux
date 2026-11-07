@@ -17,6 +17,7 @@ internal sealed class McpServer
 
 	internal string? HandleMessage(string jsonLine)
 	{
+		JsonElement? id = null;
 		try
 		{
 			using JsonDocument jsonDocument = JsonDocument.Parse(jsonLine);
@@ -27,25 +28,26 @@ internal sealed class McpServer
 			{
 				return null;
 			}
-			int id = ((value2.ValueKind == JsonValueKind.Number) ? value2.GetInt32() : 0);
+			id = value2.Clone();
 			JsonElement value3;
 			JsonElement? jsonElement = (rootElement.TryGetProperty("params", out value3) ? new JsonElement?(value3) : ((JsonElement?)null));
+			JsonElement value4 = id.Value;
 			return text switch
 			{
-				"initialize" => BuildResponse(id, HandleInitialize()), 
-				"tools/list" => BuildResponse(id, HandleToolsList()), 
-				"tools/call" => BuildResponse(id, HandleToolsCall(jsonElement)), 
-				"ping" => BuildResponse(id, JsonSerializer.SerializeToElement(new { })), 
-				_ => BuildErrorResponse(id, -32601, "Method not found: " + text), 
+				"initialize" => BuildResponse(value4, HandleInitialize()), 
+				"tools/list" => BuildResponse(value4, HandleToolsList()), 
+				"tools/call" => BuildResponse(value4, HandleToolsCall(jsonElement)), 
+				"ping" => BuildResponse(value4, JsonSerializer.SerializeToElement(new { })), 
+				_ => BuildErrorResponse(value4, -32601, "Method not found: " + text), 
 			};
 		}
-		catch (JsonException)
+		catch (JsonException ex)
 		{
-			return BuildErrorResponse(0, -32700, "Parse error");
+			return (!id.HasValue) ? BuildErrorResponse(null, -32700, "Parse error") : BuildErrorResponse(id, -32603, ex.Message);
 		}
 		catch (Exception ex2)
 		{
-			return BuildErrorResponse(0, -32603, ex2.Message);
+			return BuildErrorResponse(id, -32603, ex2.Message);
 		}
 	}
 
@@ -111,6 +113,8 @@ internal sealed class McpServer
 		}
 		catch (Exception ex)
 		{
+			Console.Error.WriteLine($"MCP_LOG: tool '{text}' failed: {ex.GetType().Name}: {ex.Message}");
+			Console.Error.Flush();
 			return BuildToolError(ex.Message);
 		}
 	}
@@ -131,14 +135,15 @@ internal sealed class McpServer
 		});
 	}
 
-	private static string BuildResponse(int id, JsonElement result)
+	private static string BuildResponse(JsonElement id, JsonElement result)
 	{
 		using MemoryStream memoryStream = new MemoryStream();
-		using (Utf8JsonWriter utf8JsonWriter = new Utf8JsonWriter((Stream)memoryStream, default(JsonWriterOptions)))
+		using (Utf8JsonWriter utf8JsonWriter = new Utf8JsonWriter(memoryStream))
 		{
 			utf8JsonWriter.WriteStartObject();
 			utf8JsonWriter.WriteString("jsonrpc", "2.0");
-			utf8JsonWriter.WriteNumber("id", id);
+			utf8JsonWriter.WritePropertyName("id");
+			id.WriteTo(utf8JsonWriter);
 			utf8JsonWriter.WritePropertyName("result");
 			result.WriteTo(utf8JsonWriter);
 			utf8JsonWriter.WriteEndObject();
@@ -146,14 +151,30 @@ internal sealed class McpServer
 		return Encoding.UTF8.GetString(memoryStream.ToArray());
 	}
 
-	private static string BuildErrorResponse(int id, int code, string message)
+	private static string BuildErrorResponse(JsonElement? id, int code, string message)
 	{
-		return JsonSerializer.Serialize(new
+		using MemoryStream memoryStream = new MemoryStream();
+		using (Utf8JsonWriter utf8JsonWriter = new Utf8JsonWriter(memoryStream))
 		{
-			jsonrpc = "2.0",
-			id = id,
-			error = new { code, message }
-		});
+			utf8JsonWriter.WriteStartObject();
+			utf8JsonWriter.WriteString("jsonrpc", "2.0");
+			utf8JsonWriter.WritePropertyName("id");
+			if (id.HasValue)
+			{
+				id.Value.WriteTo(utf8JsonWriter);
+			}
+			else
+			{
+				utf8JsonWriter.WriteNullValue();
+			}
+			utf8JsonWriter.WritePropertyName("error");
+			utf8JsonWriter.WriteStartObject();
+			utf8JsonWriter.WriteNumber("code", code);
+			utf8JsonWriter.WriteString("message", message);
+			utf8JsonWriter.WriteEndObject();
+			utf8JsonWriter.WriteEndObject();
+		}
+		return Encoding.UTF8.GetString(memoryStream.ToArray());
 	}
 
 	private static string EscapeJson(string s)

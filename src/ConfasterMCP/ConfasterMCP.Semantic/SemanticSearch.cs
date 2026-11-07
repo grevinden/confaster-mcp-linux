@@ -39,7 +39,7 @@ internal sealed class SemanticSearch
 		_db = db;
 	}
 
-	internal List<Result> Search(string query, IReadOnlyList<string> contextObjects, int limit)
+	internal List<Result> Search(string query, IReadOnlyList<string> contextObjects, int limit, string? symbolFilterSql = null)
 	{
 		List<string> list = Tokenizer.TokenizeQuery(query);
 		if (list.Count == 0)
@@ -80,7 +80,7 @@ internal sealed class SemanticSearch
 			}
 			list4.Add(text2.ToLower(CultureInfo.InvariantCulture));
 		}
-		string sql = $"\n                SELECT\n                    CAST(st.symbol_id AS INTEGER) AS sid,\n                    s.name, s.kind, s.file_path, s.start_line, s.end_line, s.is_export,\n                    bm25(symbol_terms) AS bm25,\n                    COALESCE(sw.call_count, 0) AS call_count,\n                    COALESCE(sw.caller_diversity, 0) AS caller_diversity\n                FROM symbol_terms st\n                JOIN symbols s ON s.id = CAST(st.symbol_id AS INTEGER)\n                LEFT JOIN symbol_weights sw ON sw.symbol_id = s.id\n                WHERE symbol_terms MATCH @q\n                ORDER BY bm25(symbol_terms)\n                LIMIT {Math.Max(limit * 5, limit)}";
+		string sql = $"\n                SELECT\n                    CAST(st.symbol_id AS INTEGER) AS sid,\n                    s.name, s.kind, s.file_path, s.start_line, s.end_line, s.is_export,\n                    bm25(symbol_terms) AS bm25,\n                    COALESCE(sw.call_count, 0) AS call_count,\n                    COALESCE(sw.caller_diversity, 0) AS caller_diversity\n                FROM symbol_terms st\n                JOIN symbols s ON s.id = CAST(st.symbol_id AS INTEGER)\n                LEFT JOIN symbol_weights sw ON sw.symbol_id = s.id\n                WHERE symbol_terms MATCH @q{((symbolFilterSql != null) ? (" AND " + symbolFilterSql) : "")}\n                ORDER BY bm25(symbol_terms)\n                LIMIT {Math.Max(limit * 5, limit)}";
 		List<Result> list5 = new List<Result>();
 		try
 		{

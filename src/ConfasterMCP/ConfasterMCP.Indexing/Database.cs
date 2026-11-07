@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Microsoft.Data.Sqlite;
 
 namespace ConfasterMCP.Indexing;
@@ -86,6 +87,8 @@ internal sealed class Database : IDisposable
 
 	private SqliteCommand? _delRegionsByFileCmd;
 
+	private const string ObjectsSchemaVersion = "2";
+
 	internal object WriteLock => _writeLock;
 
 	internal Database(string dbPath)
@@ -101,24 +104,99 @@ internal sealed class Database : IDisposable
 		Execute("PRAGMA synchronous=NORMAL");
 		Execute("PRAGMA cache_size=-65536");
 		Execute("PRAGMA foreign_keys=ON");
-		InitSchema();
+		Execute("PRAGMA busy_timeout=60000");
+		if (IsSchemaCurrent())
+		{
+			InitSchema();
+			return;
+		}
+		Execute("BEGIN IMMEDIATE");
+		try
+		{
+			InitSchema();
+			Execute("COMMIT");
+		}
+		catch
+		{
+			try
+			{
+				Execute("ROLLBACK");
+			}
+			catch
+			{
+			}
+			throw;
+		}
+	}
+
+	private bool IsSchemaCurrent()
+	{
+		try
+		{
+			if (QueryScalar("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='meta'") == 0L)
+			{
+				return false;
+			}
+			return GetMeta("objects_schema_version") == "2" && HasColumn("symbols", "annotation_target_lower");
+		}
+		catch
+		{
+			return false;
+		}
+	}
+
+	private void MigrateSchema()
+	{
+		bool num = QueryScalar("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='meta'") > 0;
+		bool flag = QueryScalar("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='objects'") > 0;
+		string text = (num ? GetMeta("objects_schema_version") : null);
+		if (flag && text != "2")
+		{
+			Execute("DROP TABLE IF EXISTS object_synonyms");
+			Execute("DROP TABLE IF EXISTS object_items");
+			Execute("DROP TABLE IF EXISTS objects");
+			Execute("DROP TABLE IF EXISTS synonyms_fts");
+		}
+		if (QueryScalar("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='symbols'") > 0 && !HasColumn("symbols", "annotation"))
+		{
+			Execute("ALTER TABLE symbols ADD COLUMN annotation TEXT");
+			Execute("ALTER TABLE symbols ADD COLUMN annotation_target TEXT");
+			Execute("ALTER TABLE symbols ADD COLUMN annotation_target_lower TEXT");
+		}
+	}
+
+	private bool HasColumn(string table, string column)
+	{
+		using SqliteCommand sqliteCommand = CreateCommand("PRAGMA table_info(" + table + ")");
+		using SqliteDataReader sqliteDataReader = sqliteCommand.ExecuteReader();
+		while (sqliteDataReader.Read())
+		{
+			if (string.Equals(sqliteDataReader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private void InitSchema()
 	{
+		MigrateSchema();
 		Execute("\n                CREATE TABLE IF NOT EXISTS indexed_files (\n                    path TEXT PRIMARY KEY,\n                    mtime INTEGER NOT NULL,\n                    size INTEGER NOT NULL\n                )");
-		Execute("\n                CREATE TABLE IF NOT EXISTS symbols (\n                    id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    file_path TEXT NOT NULL,\n                    name TEXT NOT NULL,\n                    name_lower TEXT NOT NULL,\n                    kind TEXT NOT NULL,\n                    start_line INTEGER NOT NULL,\n                    end_line INTEGER NOT NULL,\n                    is_export INTEGER NOT NULL DEFAULT 0,\n                    is_async INTEGER NOT NULL DEFAULT 0,\n                    directive TEXT\n                )");
+		Execute("\n                CREATE TABLE IF NOT EXISTS symbols (\n                    id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    file_path TEXT NOT NULL,\n                    name TEXT NOT NULL,\n                    name_lower TEXT NOT NULL,\n                    kind TEXT NOT NULL,\n                    start_line INTEGER NOT NULL,\n                    end_line INTEGER NOT NULL,\n                    is_export INTEGER NOT NULL DEFAULT 0,\n                    is_async INTEGER NOT NULL DEFAULT 0,\n                    directive TEXT,\n                    annotation TEXT,\n                    annotation_target TEXT,\n                    annotation_target_lower TEXT\n                )");
 		Execute("CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_path)");
 		Execute("CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name_lower)");
+		Execute("CREATE INDEX IF NOT EXISTS idx_symbols_annotation_target ON symbols(annotation_target_lower)");
 		Execute("\n                CREATE TABLE IF NOT EXISTS calls (\n                    id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    caller_id INTEGER NOT NULL,\n                    callee_name TEXT NOT NULL,\n                    callee_name_lower TEXT NOT NULL,\n                    line_number INTEGER NOT NULL,\n                    FOREIGN KEY (caller_id) REFERENCES symbols(id) ON DELETE CASCADE\n                )");
 		Execute("CREATE INDEX IF NOT EXISTS idx_calls_caller ON calls(caller_id)");
 		Execute("CREATE INDEX IF NOT EXISTS idx_calls_callee ON calls(callee_name_lower)");
-		Execute("\n                CREATE TABLE IF NOT EXISTS objects (\n                    fqn TEXT PRIMARY KEY,\n                    type_folder TEXT NOT NULL,\n                    name TEXT NOT NULL,\n                    name_lower TEXT NOT NULL,\n                    export_path TEXT\n                )");
+		Execute("\n                CREATE TABLE IF NOT EXISTS objects (\n                    id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    config TEXT NOT NULL DEFAULT '',\n                    fqn TEXT NOT NULL,\n                    type_folder TEXT NOT NULL,\n                    name TEXT NOT NULL,\n                    name_lower TEXT NOT NULL,\n                    export_path TEXT,\n                    adopted INTEGER NOT NULL DEFAULT 0,\n                    UNIQUE (config, fqn)\n                )");
+		Execute("CREATE INDEX IF NOT EXISTS idx_objects_fqn ON objects(fqn)");
 		Execute("CREATE INDEX IF NOT EXISTS idx_objects_type ON objects(type_folder)");
 		Execute("CREATE INDEX IF NOT EXISTS idx_objects_name ON objects(name_lower)");
-		Execute("\n                CREATE TABLE IF NOT EXISTS object_items (\n                    id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    object_fqn TEXT NOT NULL,\n                    kind TEXT NOT NULL,\n                    name TEXT NOT NULL,\n                    parent_name TEXT,\n                    type_info TEXT,\n                    FOREIGN KEY (object_fqn) REFERENCES objects(fqn) ON DELETE CASCADE\n                )");
-		Execute("CREATE INDEX IF NOT EXISTS idx_items_fqn ON object_items(object_fqn)");
-		Execute("\n                CREATE TABLE IF NOT EXISTS object_synonyms (\n                    id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    object_fqn TEXT NOT NULL,\n                    synonym TEXT NOT NULL,\n                    FOREIGN KEY (object_fqn) REFERENCES objects(fqn) ON DELETE CASCADE\n                )");
+		Execute("\n                CREATE TABLE IF NOT EXISTS object_items (\n                    id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    object_id INTEGER NOT NULL,\n                    kind TEXT NOT NULL,\n                    name TEXT NOT NULL,\n                    parent_name TEXT,\n                    type_info TEXT,\n                    adopted INTEGER NOT NULL DEFAULT 0,\n                    FOREIGN KEY (object_id) REFERENCES objects(id) ON DELETE CASCADE\n                )");
+		Execute("CREATE INDEX IF NOT EXISTS idx_items_object ON object_items(object_id)");
+		Execute("\n                CREATE TABLE IF NOT EXISTS object_synonyms (\n                    id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    object_id INTEGER NOT NULL,\n                    synonym TEXT NOT NULL,\n                    FOREIGN KEY (object_id) REFERENCES objects(id) ON DELETE CASCADE\n                )");
 		Execute("\n                CREATE TABLE IF NOT EXISTS regions (\n                    id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    file_path TEXT NOT NULL,\n                    name TEXT NOT NULL,\n                    start_line INTEGER NOT NULL,\n                    end_line INTEGER NOT NULL\n                )");
 		Execute("CREATE INDEX IF NOT EXISTS idx_regions_file ON regions(file_path)");
 		Execute("\n                CREATE TABLE IF NOT EXISTS meta (\n                    key TEXT PRIMARY KEY,\n                    value TEXT\n                )");
@@ -128,6 +206,10 @@ internal sealed class Database : IDisposable
 		Execute("\n                CREATE TABLE IF NOT EXISTS symbol_weights (\n                    symbol_id INTEGER PRIMARY KEY,\n                    call_count INTEGER NOT NULL DEFAULT 0,\n                    caller_diversity INTEGER NOT NULL DEFAULT 0\n                )");
 		Execute("\n                CREATE TABLE IF NOT EXISTS domain_aliases (\n                    id INTEGER PRIMARY KEY AUTOINCREMENT,\n                    term TEXT NOT NULL,\n                    alias TEXT NOT NULL,\n                    weight REAL NOT NULL DEFAULT 1.0\n                )");
 		Execute("CREATE INDEX IF NOT EXISTS idx_alias_term ON domain_aliases(term)");
+		if (GetMeta("objects_schema_version") != "2")
+		{
+			SetMeta("objects_schema_version", "2");
+		}
 	}
 
 	internal void Execute(string sql)
@@ -161,7 +243,7 @@ internal sealed class Database : IDisposable
 
 	internal Dictionary<string, (long mtime, long size)> GetIndexedFiles()
 	{
-		Dictionary<string, (long, long)> dictionary = new Dictionary<string, (long, long)>(StringComparer.OrdinalIgnoreCase);
+		Dictionary<string, (long, long)> dictionary = new Dictionary<string, (long, long)>(StringComparer.Ordinal);
 		using SqliteCommand sqliteCommand = CreateCommand("SELECT path, mtime, size FROM indexed_files");
 		using SqliteDataReader sqliteDataReader = sqliteCommand.ExecuteReader();
 		while (sqliteDataReader.Read())
@@ -196,12 +278,12 @@ internal sealed class Database : IDisposable
 		sqliteCommand.ExecuteNonQuery();
 	}
 
-	internal long InsertSymbol(string filePath, string name, string kind, int startLine, int endLine, bool isExport, bool isAsync, string? directive)
+	internal long InsertSymbol(string filePath, string name, string kind, int startLine, int endLine, bool isExport, bool isAsync, string? directive, string? annotation = null, string? annotationTarget = null)
 	{
 		if (_insertSymbolCmd == null)
 		{
 			SqliteCommand sqliteCommand = _conn.CreateCommand();
-			sqliteCommand.CommandText = "\n                    INSERT INTO symbols (file_path, name, name_lower, kind, start_line, end_line, is_export, is_async, directive)\n                    VALUES (@fp, @n, @nl, @k, @sl, @el, @exp, @asy, @dir)";
+			sqliteCommand.CommandText = "\n                    INSERT INTO symbols (file_path, name, name_lower, kind, start_line, end_line, is_export, is_async, directive,\n                                         annotation, annotation_target, annotation_target_lower)\n                    VALUES (@fp, @n, @nl, @k, @sl, @el, @exp, @asy, @dir, @ann, @at, @atl)";
 			sqliteCommand.Parameters.Add("@fp", SqliteType.Text);
 			sqliteCommand.Parameters.Add("@n", SqliteType.Text);
 			sqliteCommand.Parameters.Add("@nl", SqliteType.Text);
@@ -211,6 +293,9 @@ internal sealed class Database : IDisposable
 			sqliteCommand.Parameters.Add("@exp", SqliteType.Integer);
 			sqliteCommand.Parameters.Add("@asy", SqliteType.Integer);
 			sqliteCommand.Parameters.Add("@dir", SqliteType.Text);
+			sqliteCommand.Parameters.Add("@ann", SqliteType.Text);
+			sqliteCommand.Parameters.Add("@at", SqliteType.Text);
+			sqliteCommand.Parameters.Add("@atl", SqliteType.Text);
 			sqliteCommand.Prepare();
 			_insertSymbolCmd = sqliteCommand;
 		}
@@ -223,6 +308,9 @@ internal sealed class Database : IDisposable
 		_insertSymbolCmd.Parameters["@exp"].Value = (isExport ? 1 : 0);
 		_insertSymbolCmd.Parameters["@asy"].Value = (isAsync ? 1 : 0);
 		_insertSymbolCmd.Parameters["@dir"].Value = ((object)directive) ?? ((object)DBNull.Value);
+		_insertSymbolCmd.Parameters["@ann"].Value = ((object)annotation) ?? ((object)DBNull.Value);
+		_insertSymbolCmd.Parameters["@at"].Value = ((object)annotationTarget) ?? ((object)DBNull.Value);
+		_insertSymbolCmd.Parameters["@atl"].Value = ((object)annotationTarget?.ToLowerInvariant()) ?? ((object)DBNull.Value);
 		_insertSymbolCmd.ExecuteNonQuery();
 		if (_lastRowIdCmd == null)
 		{
@@ -356,40 +444,67 @@ internal sealed class Database : IDisposable
 		_insertCallCmd.ExecuteNonQuery();
 	}
 
-	internal void ClearObjects()
+	internal void ClearObjects(IEnumerable<string> configs)
 	{
-		Execute("DELETE FROM synonyms_fts");
-		Execute("DELETE FROM object_synonyms");
-		Execute("DELETE FROM object_items");
-		Execute("DELETE FROM objects");
+		List<string> list = configs.ToList();
+		if (list.Count == 0)
+		{
+			return;
+		}
+		string text = string.Join(", ", list.Select((string _, int i) => "@c" + i));
+		string text2 = "SELECT id FROM objects WHERE config IN (" + text + ")";
+		string[] array = new string[4]
+		{
+			"DELETE FROM synonyms_fts WHERE rowid IN (SELECT id FROM object_synonyms WHERE object_id IN (" + text2 + "))",
+			"DELETE FROM object_synonyms WHERE object_id IN (" + text2 + ")",
+			"DELETE FROM object_items WHERE object_id IN (" + text2 + ")",
+			"DELETE FROM objects WHERE config IN (" + text + ")"
+		};
+		foreach (string sql in array)
+		{
+			using SqliteCommand sqliteCommand = CreateCommand(sql);
+			for (int num2 = 0; num2 < list.Count; num2++)
+			{
+				sqliteCommand.Parameters.AddWithValue("@c" + num2, list[num2]);
+			}
+			sqliteCommand.ExecuteNonQuery();
+		}
 	}
 
-	internal void InsertObject(string fqn, string typeFolder, string name, string? exportPath)
+	internal long InsertObject(string config, string fqn, string typeFolder, string name, string? exportPath, bool adopted)
 	{
-		using SqliteCommand sqliteCommand = CreateCommand("INSERT OR REPLACE INTO objects (fqn, type_folder, name, name_lower, export_path) VALUES (@f, @t, @n, @nl, @e)");
+		using SqliteCommand sqliteCommand = CreateCommand("\n                INSERT OR IGNORE INTO objects (config, fqn, type_folder, name, name_lower, export_path, adopted)\n                VALUES (@c, @f, @t, @n, @nl, @e, @a)");
+		sqliteCommand.Parameters.AddWithValue("@c", config);
 		sqliteCommand.Parameters.AddWithValue("@f", fqn);
 		sqliteCommand.Parameters.AddWithValue("@t", typeFolder);
 		sqliteCommand.Parameters.AddWithValue("@n", name);
 		sqliteCommand.Parameters.AddWithValue("@nl", name.ToLowerInvariant());
 		sqliteCommand.Parameters.AddWithValue("@e", ((object)exportPath) ?? ((object)DBNull.Value));
-		sqliteCommand.ExecuteNonQuery();
+		sqliteCommand.Parameters.AddWithValue("@a", adopted ? 1 : 0);
+		if (sqliteCommand.ExecuteNonQuery() == 0)
+		{
+			return 0L;
+		}
+		using SqliteCommand sqliteCommand2 = CreateCommand("SELECT last_insert_rowid()");
+		return (long)sqliteCommand2.ExecuteScalar();
 	}
 
-	internal void InsertObjectItem(string objectFqn, string kind, string name, string? parentName, string? typeInfo)
+	internal void InsertObjectItem(long objectId, string kind, string name, string? parentName, string? typeInfo, bool adopted)
 	{
-		using SqliteCommand sqliteCommand = CreateCommand("INSERT INTO object_items (object_fqn, kind, name, parent_name, type_info) VALUES (@f, @k, @n, @p, @t)");
-		sqliteCommand.Parameters.AddWithValue("@f", objectFqn);
+		using SqliteCommand sqliteCommand = CreateCommand("INSERT INTO object_items (object_id, kind, name, parent_name, type_info, adopted) VALUES (@o, @k, @n, @p, @t, @a)");
+		sqliteCommand.Parameters.AddWithValue("@o", objectId);
 		sqliteCommand.Parameters.AddWithValue("@k", kind);
 		sqliteCommand.Parameters.AddWithValue("@n", name);
 		sqliteCommand.Parameters.AddWithValue("@p", ((object)parentName) ?? ((object)DBNull.Value));
 		sqliteCommand.Parameters.AddWithValue("@t", ((object)typeInfo) ?? ((object)DBNull.Value));
+		sqliteCommand.Parameters.AddWithValue("@a", adopted ? 1 : 0);
 		sqliteCommand.ExecuteNonQuery();
 	}
 
-	internal void InsertSynonym(string objectFqn, string synonym)
+	internal void InsertSynonym(long objectId, string synonym)
 	{
-		using SqliteCommand sqliteCommand = CreateCommand("INSERT INTO object_synonyms (object_fqn, synonym) VALUES (@f, @s)");
-		sqliteCommand.Parameters.AddWithValue("@f", objectFqn);
+		using SqliteCommand sqliteCommand = CreateCommand("INSERT INTO object_synonyms (object_id, synonym) VALUES (@o, @s)");
+		sqliteCommand.Parameters.AddWithValue("@o", objectId);
 		sqliteCommand.Parameters.AddWithValue("@s", synonym);
 		sqliteCommand.ExecuteNonQuery();
 		using SqliteCommand sqliteCommand2 = CreateCommand("SELECT last_insert_rowid()");

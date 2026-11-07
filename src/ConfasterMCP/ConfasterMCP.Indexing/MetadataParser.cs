@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Xml;
 using ConfasterMCP.Util;
 
@@ -9,40 +10,59 @@ namespace ConfasterMCP.Indexing;
 
 internal static class MetadataParser
 {
-	internal static List<ObjectMetadata> ScanExportRoot(string exportRoot)
+	internal static List<ObjectMetadata> ScanExportRoot(ConfigRoots roots, ConfigRoot root)
 	{
 		List<ObjectMetadata> list = new List<ObjectMetadata>();
+		string exportRoot = root.Path;
 		foreach (KeyValuePair<string, string> item in PathHelper.TypeFolderToXmlTag)
 		{
 			item.Deconstruct(out var key, out var value);
 			string text = key;
 			string text2 = value;
-			string text3 = Path.Combine(exportRoot, text);
-			if (!Directory.Exists(text3))
+			string typePath = Path.Combine(exportRoot, text);
+			if (!Directory.Exists(typePath))
 			{
 				continue;
 			}
-			foreach (string item2 in Directory.EnumerateFiles(text3, "*.xml", SearchOption.TopDirectoryOnly))
+			foreach (string item2 in ListOrSkip(() => Directory.EnumerateFiles(typePath, "*.xml", SearchOption.TopDirectoryOnly), typePath))
 			{
 				string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(item2);
 				string fqn = text2 + "." + fileNameWithoutExtension;
-				string text4 = Path.Combine(text3, fileNameWithoutExtension);
+				string text3 = Path.Combine(typePath, fileNameWithoutExtension);
 				ObjectMetadata objectMetadata = new ObjectMetadata
 				{
 					Fqn = fqn,
 					TypeFolder = text,
 					Name = fileNameWithoutExtension,
-					ExportPath = PathHelper.GetRelativePath(text4, exportRoot)
+					ExportPath = ToKey(text3)
 				};
 				ParseObjectXml(item2, objectMetadata);
-				if (Directory.Exists(text4))
+				if (Directory.Exists(text3))
 				{
-					ScanObjectDirectory(text4, exportRoot, objectMetadata);
+					ScanObjectDirectory(text3, ToKey, objectMetadata);
 				}
 				list.Add(objectMetadata);
 			}
 		}
 		return list;
+		string ToKey(string fullPath)
+		{
+			return roots.ToKey(root, PathHelper.GetRelativePath(fullPath, exportRoot));
+		}
+	}
+
+	private static List<string> ListOrSkip(Func<IEnumerable<string>> enumerate, string dir)
+	{
+		try
+		{
+			return enumerate().ToList();
+		}
+		catch (Exception ex) when (((ex is UnauthorizedAccessException || ex is IOException) ? 1 : 0) != 0)
+		{
+			Console.Error.WriteLine("MCP_LOG: metadata: skipped unreadable folder " + dir + ": " + ex.Message);
+			Console.Error.Flush();
+			return new List<string>();
+		}
 	}
 
 	private static void ParseObjectXml(string xmlFile, ObjectMetadata metadata)
@@ -55,6 +75,11 @@ internal static class MetadataParser
 			xmlNamespaceManager.AddNamespace("v8", "http://v8.1c.ru/8.3/MDClasses");
 			xmlNamespaceManager.AddNamespace("core", "http://v8.1c.ru/8.1/data/core");
 			xmlNamespaceManager.AddNamespace("xs", "http://www.w3.org/2001/XMLSchema");
+			XmlElement xmlElement = xmlDocument.DocumentElement?.ChildNodes.OfType<XmlElement>().FirstOrDefault();
+			if (xmlElement != null && IsAdopted(xmlElement))
+			{
+				metadata.Adopted = true;
+			}
 			if (xmlDocument.SelectNodes("//core:item/core:content", xmlNamespaceManager) != null)
 			{
 				XmlElement documentElement = xmlDocument.DocumentElement;
@@ -112,41 +137,24 @@ internal static class MetadataParser
 				string text2 = ExtractChildName(childNode3);
 				if (!string.IsNullOrEmpty(text2))
 				{
-					switch (localName)
+					string text3 = localName switch
 					{
-					case "Attribute":
-						metadata.Items.Add(new ObjectItemInfo("attribute", text2, null));
-						break;
-					case "TabularSection":
-						metadata.Items.Add(new ObjectItemInfo("tabular_section", text2, null));
-						break;
-					case "Form":
-						metadata.Items.Add(new ObjectItemInfo("form", text2, null));
-						break;
-					case "Command":
-						metadata.Items.Add(new ObjectItemInfo("command", text2, null));
-						break;
-					case "Template":
-						metadata.Items.Add(new ObjectItemInfo("template", text2, null));
-						break;
-					case "Dimension":
-						metadata.Items.Add(new ObjectItemInfo("dimension", text2, null));
-						break;
-					case "Resource":
-						metadata.Items.Add(new ObjectItemInfo("resource", text2, null));
-						break;
-					case "Column":
-						metadata.Items.Add(new ObjectItemInfo("column", text2, null));
-						break;
-					case "AccountingFlag":
-						metadata.Items.Add(new ObjectItemInfo("accounting_flag", text2, null));
-						break;
-					case "ExtDimensionAccountingFlag":
-						metadata.Items.Add(new ObjectItemInfo("ext_dimension_flag", text2, null));
-						break;
-					case "AddressingAttribute":
-						metadata.Items.Add(new ObjectItemInfo("addressing_attribute", text2, null));
-						break;
+						"Attribute" => "attribute", 
+						"TabularSection" => "tabular_section", 
+						"Form" => "form", 
+						"Command" => "command", 
+						"Template" => "template", 
+						"Dimension" => "dimension", 
+						"Resource" => "resource", 
+						"Column" => "column", 
+						"AccountingFlag" => "accounting_flag", 
+						"ExtDimensionAccountingFlag" => "ext_dimension_flag", 
+						"AddressingAttribute" => "addressing_attribute", 
+						_ => null, 
+					};
+					if (text3 != null)
+					{
+						metadata.Items.Add(new ObjectItemInfo(text3, text2, null, IsAdopted(childNode3)));
 					}
 				}
 			}
@@ -156,12 +164,12 @@ internal static class MetadataParser
 		}
 	}
 
-	private static void ScanObjectDirectory(string objectDir, string exportRoot, ObjectMetadata metadata)
+	private static void ScanObjectDirectory(string objectDir, Func<string, string> toKey, ObjectMetadata metadata)
 	{
-		string path = Path.Combine(objectDir, "Ext");
-		if (Directory.Exists(path))
+		string extDir = Path.Combine(objectDir, "Ext");
+		if (Directory.Exists(extDir))
 		{
-			foreach (string item in Directory.EnumerateFiles(path, "*.bsl"))
+			foreach (string item in ListOrSkip(() => Directory.EnumerateFiles(extDir, "*.bsl"), extDir))
 			{
 				string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(item);
 				string name = fileNameWithoutExtension switch
@@ -177,36 +185,36 @@ internal static class MetadataParser
 					"ExternalConnectionModule" => "external_connection", 
 					_ => fileNameWithoutExtension.ToLowerInvariant(), 
 				};
-				metadata.Items.Add(new ObjectItemInfo("module", name, PathHelper.GetRelativePath(item, exportRoot)));
+				metadata.Items.Add(new ObjectItemInfo("module", name, toKey(item)));
 			}
 		}
-		string path2 = Path.Combine(objectDir, "Forms");
-		if (Directory.Exists(path2))
+		string formsDir = Path.Combine(objectDir, "Forms");
+		if (Directory.Exists(formsDir))
 		{
-			foreach (string item2 in Directory.EnumerateDirectories(path2))
+			foreach (string item2 in ListOrSkip(() => Directory.EnumerateDirectories(formsDir), formsDir))
 			{
 				string fileName = Path.GetFileName(item2);
 				string text = Path.Combine(item2, "Ext", "Form", "Module.bsl");
 				if (File.Exists(text))
 				{
-					metadata.Items.Add(new ObjectItemInfo("form_module", fileName, PathHelper.GetRelativePath(text, exportRoot)));
+					metadata.Items.Add(new ObjectItemInfo("form_module", fileName, toKey(text)));
 				}
 			}
 		}
-		string path3 = Path.Combine(objectDir, "Commands");
-		if (Directory.Exists(path3))
+		string commandsDir = Path.Combine(objectDir, "Commands");
+		if (Directory.Exists(commandsDir))
 		{
-			foreach (string item3 in Directory.EnumerateDirectories(path3))
+			foreach (string item3 in ListOrSkip(() => Directory.EnumerateDirectories(commandsDir), commandsDir))
 			{
 				string text2 = Path.Combine(item3, "Ext", "CommandModule.bsl");
 				if (File.Exists(text2))
 				{
 					string fileName2 = Path.GetFileName(item3);
-					metadata.Items.Add(new ObjectItemInfo("command_module", fileName2, PathHelper.GetRelativePath(text2, exportRoot)));
+					metadata.Items.Add(new ObjectItemInfo("command_module", fileName2, toKey(text2)));
 				}
 			}
 		}
-		foreach (string item4 in Directory.EnumerateFiles(objectDir, "*.xml", SearchOption.TopDirectoryOnly))
+		foreach (string item4 in ListOrSkip(() => Directory.EnumerateFiles(objectDir, "*.xml", SearchOption.TopDirectoryOnly), objectDir))
 		{
 			if (!(Path.GetFileName(item4) == Path.GetFileName(objectDir) + ".xml"))
 			{
@@ -234,7 +242,7 @@ internal static class MetadataParser
 					string text = ExtractChildName(childNode);
 					if (!string.IsNullOrEmpty(text))
 					{
-						metadata.Items.Add(new ObjectItemInfo("ts_attribute", text, fileNameWithoutExtension));
+						metadata.Items.Add(new ObjectItemInfo("ts_attribute", text, fileNameWithoutExtension, IsAdopted(childNode)));
 					}
 				}
 			}
@@ -269,5 +277,25 @@ internal static class MetadataParser
 			}
 		}
 		return element.InnerText?.Trim() ?? "";
+	}
+
+	private static bool IsAdopted(XmlNode element)
+	{
+		foreach (XmlNode childNode in element.ChildNodes)
+		{
+			if (childNode.NodeType != XmlNodeType.Element || childNode.LocalName != "Properties")
+			{
+				continue;
+			}
+			foreach (XmlNode childNode2 in childNode.ChildNodes)
+			{
+				if (childNode2.NodeType == XmlNodeType.Element && childNode2.LocalName == "ObjectBelonging")
+				{
+					return string.Equals(childNode2.InnerText?.Trim(), "Adopted", StringComparison.OrdinalIgnoreCase);
+				}
+			}
+			return false;
+		}
+		return false;
 	}
 }

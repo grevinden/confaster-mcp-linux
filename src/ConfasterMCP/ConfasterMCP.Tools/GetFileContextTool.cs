@@ -8,8 +8,6 @@ namespace ConfasterMCP.Tools;
 
 internal sealed class GetFileContextTool : IConfasterMCPTool
 {
-	private readonly string _exportRoot;
-
 	private readonly FileCache _fileCache;
 
 	private readonly FileScanner _fileScanner;
@@ -26,7 +24,7 @@ internal sealed class GetFileContextTool : IConfasterMCPTool
 			file = new
 			{
 				type = "string",
-				description = "Путь к файлу относительно корня конфигурации"
+				description = "Путь к файлу: absolute_path из результатов поиска либо путь относительно корня выгрузки"
 			},
 			line = new
 			{
@@ -38,14 +36,18 @@ internal sealed class GetFileContextTool : IConfasterMCPTool
 				type = "integer",
 				description = "Строк контекста выше и ниже (по умолчанию 40)",
 				@default = 40
+			},
+			configuration = new
+			{
+				type = "string",
+				description = "Для относительного пути: имя расширения или 'основная'. У заимствованных объектов один и тот же путь есть и в основной конфигурации, и в расширении."
 			}
 		},
 		required = new string[2] { "file", "line" }
 	});
 
-	internal GetFileContextTool(string exportRoot, FileCache fileCache, FileScanner fileScanner)
+	internal GetFileContextTool(FileCache fileCache, FileScanner fileScanner)
 	{
-		_exportRoot = exportRoot;
 		_fileCache = fileCache;
 		_fileScanner = fileScanner;
 	}
@@ -57,17 +59,24 @@ internal sealed class GetFileContextTool : IConfasterMCPTool
 		JsonElement value2;
 		int num = (args.TryGetProperty("line", out value2) ? value2.GetInt32() : 0);
 		int value3 = (args.TryGetProperty("radius", out var value4) ? value4.GetInt32() : 40);
+		JsonElement value5;
+		string name = (args.TryGetProperty("configuration", out value5) ? value5.GetString() : null);
 		if (string.IsNullOrEmpty(text) || num <= 0)
 		{
 			return "{\"error\": \"file and line are required\"}";
 		}
 		value3 = Math.Clamp(value3, 1, 200);
-		string text2 = ResolveFilePath(text);
+		ConfigRoots roots = _fileScanner.Roots;
+		if (roots.IsUnknownName(name, out ConfigRoot root))
+		{
+			return ToolJson.UnknownConfiguration(roots, name);
+		}
+		string text2 = ResolveFilePath(roots, text, root);
 		if (text2 == null)
 		{
-			return JsonSerializer.Serialize(new
+			return ToolJson.Serialize(new
 			{
-				error = "File not found: " + text
+				error = ((root != null) ? ("File not found in " + root.Label + ": " + text) : ("File not found: " + text))
 			});
 		}
 		try
@@ -78,18 +87,20 @@ internal sealed class GetFileContextTool : IConfasterMCPTool
 			StringBuilder stringBuilder = new StringBuilder();
 			for (int i = num2; i < num3; i++)
 			{
-				string value5 = ((i == num - 1) ? "> " : "  ");
+				string value6 = ((i == num - 1) ? "> " : "  ");
 				StringBuilder stringBuilder2 = stringBuilder;
 				StringBuilder.AppendInterpolatedStringHandler handler = new StringBuilder.AppendInterpolatedStringHandler(2, 3, stringBuilder2);
-				handler.AppendFormatted(value5);
+				handler.AppendFormatted(value6);
 				handler.AppendFormatted(i + 1, 6);
 				handler.AppendLiteral(": ");
 				handler.AppendFormatted(lines[i]);
 				stringBuilder2.AppendLine(ref handler);
 			}
-			return JsonSerializer.Serialize(new
+			string text3 = roots.KeyOfFullPath(text2);
+			return ToolJson.Serialize(new
 			{
-				file = PathHelper.ToDisplayPath(PathHelper.GetRelativePath(text2, _exportRoot)),
+				file = ((text3 != null) ? ConfigRoots.DisplayPath(text3) : text2),
+				configuration = ((text3 != null) ? roots.LabelOf(text3) : null),
 				absolute_path = text2,
 				target_line = num,
 				total_lines = lines.Length,
@@ -107,9 +118,9 @@ internal sealed class GetFileContextTool : IConfasterMCPTool
 		}
 	}
 
-	private string? ResolveFilePath(string file)
+	internal static string? ResolveFilePath(ConfigRoots roots, string file, ConfigRoot? preferred)
 	{
-		string text = _fileScanner.ResolveFullPath(file);
+		string text = roots.ResolveUserPath(file, preferred);
 		if (text != null)
 		{
 			return text;
@@ -120,8 +131,8 @@ internal sealed class GetFileContextTool : IConfasterMCPTool
 			int num = text2.LastIndexOf('/');
 			if (num > 0)
 			{
-				string relativePath = text2.Substring(0, num) + "/Ext/Form" + text2.Substring(num);
-				string text3 = _fileScanner.ResolveFullPath(relativePath);
+				string path = text2.Substring(0, num) + "/Ext/Form" + text2.Substring(num);
+				string text3 = roots.ResolveUserPath(path, preferred);
 				if (text3 != null)
 				{
 					return text3;
@@ -131,8 +142,8 @@ internal sealed class GetFileContextTool : IConfasterMCPTool
 		int num2 = text2.LastIndexOf('/');
 		if (num2 > 0)
 		{
-			string relativePath2 = text2.Substring(0, num2) + "/Ext" + text2.Substring(num2);
-			string text4 = _fileScanner.ResolveFullPath(relativePath2);
+			string path2 = text2.Substring(0, num2) + "/Ext" + text2.Substring(num2);
+			string text4 = roots.ResolveUserPath(path2, preferred);
 			if (text4 != null)
 			{
 				return text4;

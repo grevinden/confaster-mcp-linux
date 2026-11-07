@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using ConfasterMCP.Indexing;
 
 namespace ConfasterMCP.Tools;
@@ -49,12 +50,13 @@ internal sealed class FindReferencesTool : IConfasterMCPTool
 			return "{\"error\": \"symbol is required\"}";
 		}
 		value2 = Math.Clamp(value2, 1, 200);
-		List<SearchResult> list = _scanner.Search(text, value2);
+		List<SearchResult> list = _scanner.Search(text, value2, isRegex: false, null, default(CancellationToken), null, exhaustive: true);
 		var list2 = (from r in list
-			group r by r.DisplayPath into g
+			group r by r.FilePath into g
 			select new
 			{
-				file = g.Key,
+				file = g.First().DisplayPath,
+				configuration = g.First().Configuration,
 				absolute_path = g.First().AbsolutePath,
 				count = g.Count(),
 				references = from r in g.Take(5)
@@ -66,7 +68,7 @@ internal sealed class FindReferencesTool : IConfasterMCPTool
 			} into g
 			orderby g.count descending
 			select g).ToList();
-		return JsonSerializer.Serialize(new
+		return ToolJson.Serialize(new
 		{
 			symbol = text,
 			files = list2,
