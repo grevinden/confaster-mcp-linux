@@ -50,7 +50,7 @@ internal sealed class HelpIndexer
 			Console.Error.WriteLine($"HELP_STATUS:ready:{version}:{topicCount}");
 			return true;
 		}
-		string binPath = Path.Combine(text, "bin");
+		string binPath = GetHelpDirectory(text);
 		Task.Run(delegate
 		{
 			RunIndexing(binPath, version);
@@ -68,7 +68,7 @@ internal sealed class HelpIndexer
 		if (text != null)
 		{
 			string version = ExtractVersionFromPath(text);
-			string binPath = Path.Combine(text, "bin");
+			string binPath = GetHelpDirectory(text);
 			try
 			{
 				_db.ClearAll();
@@ -94,7 +94,7 @@ internal sealed class HelpIndexer
 		if (text != null)
 		{
 			string version = ExtractVersionFromPath(text);
-			string binPath = Path.Combine(text, "bin");
+			string binPath = GetHelpDirectory(text);
 			_db.Recreate();
 			Console.Error.WriteLine("HELP_STATUS:repair:Индекс пересоздан, запуск индексации " + version);
 			Task.Run(delegate
@@ -181,14 +181,22 @@ internal sealed class HelpIndexer
 
 	internal static string? FindPlatformPath()
 	{
-		string[] array = new string[2] { "C:\\Program Files\\1cv8", "C:\\Program Files (x86)\\1cv8" };
+		string[] array = new string[6]
+		{
+			"C:\\Program Files\\1cv8",
+			"C:\\Program Files (x86)\\1cv8",
+			"/opt/1cv8/x86_64",
+			"/opt/1C/1cv8/x86_64",
+			"/opt/1cv8",
+			"/opt/1C/1cv8"
+		};
 		foreach (string path in array)
 		{
 			if (Directory.Exists(path))
 			{
 				List<string> list = (from d in Directory.EnumerateDirectories(path)
 					where Regex.IsMatch(Path.GetFileName(d), "^\\d+\\.\\d+\\.\\d+\\.\\d+$")
-					where File.Exists(Path.Combine(d, "bin", "shcntx_ru.hbk"))
+					where File.Exists(Path.Combine(d, "bin", "shcntx_ru.hbk")) || File.Exists(Path.Combine(d, "shcntx_ru.hbk"))
 					orderby ParseVersion(Path.GetFileName(d)) descending
 					select d).ToList();
 				if (list.Count > 0)
@@ -198,6 +206,13 @@ internal sealed class HelpIndexer
 			}
 		}
 		return null;
+	}
+
+	// Windows: справка в <версия>\bin\; Linux: файлы справки лежат в корне каталога версии.
+	internal static string GetHelpDirectory(string platformPath)
+	{
+		string text = Path.Combine(platformPath, "bin");
+		return File.Exists(Path.Combine(text, "shcntx_ru.hbk")) ? text : platformPath;
 	}
 
 	private static Version ParseVersion(string versionStr)
