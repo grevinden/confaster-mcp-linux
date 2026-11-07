@@ -4,20 +4,25 @@
 [![Release](https://img.shields.io/github/v/release/grevinden/confaster-mcp-linux)](https://github.com/grevinden/confaster-mcp-linux/releases)
 
 Порт MCP-сервера **1c-search** из состава [Confaster](https://confaster.ru/) под
-Linux: поиск по выгрузкам конфигураций 1С — текст, символы, вызовы, объекты
+Linux: поиск по исходникам конфигураций 1С — текст, символы, вызовы, объекты
 метаданных, справка платформы. Работает с любым MCP-клиентом.
+
+Поддерживаются оба формата исходников: полная выгрузка из Конфигуратора
+(`*.xml` + `*.bsl`) и проект 1C:EDT (`src/.../Module.bsl`). Формат определяется
+автоматически по корню, указанному в `--export-root`; их можно смешивать,
+например основная конфигурация из Конфигуратора, расширение — из EDT.
 
 | | |
 |---|---|
 | Апстрим | ConfasterMCP `1.0.0+0c31141d` (дистрибутив от 2026-11-07) |
-| Версия порта | `1.0.0-port.3` |
+| Версия порта | `1.0.0-port.4` |
 | Паритет | 17/17 инструментов оригинала совпадают по описаниям и схемам, плюс 4 инструмента справки |
 | Пакеты | `.deb` (amd64, arm64) и бинарные архивы в [Releases](https://github.com/grevinden/confaster-mcp-linux/releases) |
 
 ## Быстрый старт
 
 ```bash
-sudo dpkg -i confaster-mcp_1.0.0-port.3_amd64.deb
+sudo dpkg -i confaster-mcp_1.0.0-port.4_amd64.deb
 ```
 
 Подключение в MCP-клиенте:

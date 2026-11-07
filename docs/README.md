@@ -1,7 +1,8 @@
 # Документация ConfasterMCP для Linux
 
-Порт MCP-сервера Confaster (1c-search): поиск по выгрузкам конфигураций 1С
-с любого MCP-клиента на Linux.
+Порт MCP-сервера Confaster (1c-search): поиск по исходникам конфигураций 1С
+с любого MCP-клиента на Linux. Поддерживаются выгрузка Конфигуратора
+(`*.xml` + `*.bsl`) и проект 1C:EDT (`src/.../Module.bsl`).
 
 | Документ | О чём |
 |---|---|
@@ -17,7 +18,7 @@
 Короткая шпаргалка:
 
 ```bash
-sudo dpkg -i confaster-mcp_1.0.0-port.3_amd64.deb     # установка
+sudo dpkg -i confaster-mcp_1.0.0-port.4_amd64.deb     # установка
 confaster-mcp --export-root /путь/к/выгрузке            # запуск (stdio)
 ```
 

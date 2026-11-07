@@ -4,7 +4,7 @@
 
 - Linux x86_64 или arm64, glibc 2.31+.
 - `libicu` (для .NET; в `.deb` указан как зависимость).
-- Выгрузка конфигурации 1С — каталог с исходниками (см. [usage.md](usage.md)).
+- Исходники конфигурации 1С: полная выгрузка из Конфигуратора (`Configuration.xml`, `*.bsl`) или проект 1C:EDT (`src/.../Module.bsl`). Подробности — [usage.md](usage.md).
 - Платформа 1С (необязательно) — для инструментов справки.
 
 ## Из пакета .deb
@@ -12,7 +12,7 @@
 Пакет self-contained: dotnet-runtime не нужен.
 
 ```bash
-sudo dpkg -i confaster-mcp_1.0.0-port.3_amd64.deb
+sudo dpkg -i confaster-mcp_1.0.0-port.4_amd64.deb
 # если dpkg сообщит о неудовлетворённых зависимостях:
 sudo apt-get install -f
 ```
@@ -39,7 +39,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 ## Из бинарного архива
 
 ```bash
-tar xzf confaster-mcp_1.0.0-port.3_linux-amd64.tar.gz -C ~/confaster-mcp
+tar xzf confaster-mcp_1.0.0-port.4_linux-amd64.tar.gz -C ~/confaster-mcp
 ~/confaster-mcp/ConfasterMCP --export-root /путь/к/выгрузке
 ```
 
