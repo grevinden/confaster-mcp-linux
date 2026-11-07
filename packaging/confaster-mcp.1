@@ -1,0 +1,33 @@
+.TH CONFASTER-MCP 1 "2026-11-07" "1.0.0-port.1" "Руководство пользователя"
+.SH NAME
+confaster\-mcp \- MCP\-сервер поиска по выгрузке конфигурации 1С
+.SH SYNOPSIS
+.B confaster\-mcp
+[\fB\-\-export\-root\fR \fIпуть\fR]
+[\fB\-\-extension\-root\fR \fIпуть\fR]...
+[\fB\-\-disabled\-tool\fR \fIимя\fR]...
+[\fB\-\-no\-index\-admin\fR]
+.SH DESCRIPTION
+Сервер реализует протокол Model Context Protocol (MCP) поверх стандартного
+ввода\-вывода. Предоставляет инструменты поиска по коду (BSL/XML), символьного
+анализа (tree\-sitter), работы с объектами метаданных и справкой платформы 1С.
+.SH OPTIONS
+.TP
+.B \-\-export\-root \fIпуть\fR
+Корень выгрузки основной конфигурации. Обязателен для регистрации инструментов
+поиска.
+.TP
+.B \-\-extension\-root \fIпуть\fR
+Корень выгрузки расширения; можно указывать несколько раз.
+.TP
+.B \-\-disabled\-tool \fIимя\fR
+Отключить инструмент по имени; можно указывать несколько раз.
+.TP
+.B \-\-no\-index\-admin
+Запретить инструменты, меняющие индекс (sync_index и подобные).
+.SH FILES
+.TP
+.I <выгрузка>/.index/onec_search.db
+Индекс SQLite, создаётся автоматически.
+.SH SEE ALSO
+Полная документация: https://github.com/grevinden/confaster-mcp-linux/tree/main/docs

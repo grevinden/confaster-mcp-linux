@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Сборка (managed + libtree-sitter-bsl.so)
+        run: scripts/build.sh
+
+      - name: Смоук-тест MCP
+        run: scripts/smoke-test.sh
+
+      - name: deb-пакет
+        run: scripts/build-deb.sh
+
+      - name: Бинарный архив
+        run: scripts/build-tarball.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: confaster-mcp-ci
+          path: |
+            build/*.deb
+            build/*.tar.gz

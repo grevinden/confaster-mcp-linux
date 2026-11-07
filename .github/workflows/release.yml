@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Проверка версии
+        run: |
+          test "v$(tr -d '[:space:]' < VERSION)" = "$GITHUB_REF_NAME" \
+            || { echo "Тег $GITHUB_REF_NAME не совпадает с VERSION=$(cat VERSION)"; exit 1; }
+
+      - name: Инструменты сборки
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-aarch64-linux-gnu
+
+      - name: deb amd64 и arm64
+        run: |
+          scripts/build-deb.sh amd64
+          scripts/build-deb.sh arm64
+
+      - name: Бинарные архивы
+        run: |
+          scripts/build-tarball.sh amd64
+          scripts/build-tarball.sh arm64
+
+      - name: Версия апстрима
+        id: ver
+        run: echo "upstream=$(tr -d '[:space:]' < VERSION | cut -d- -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Публикация релиза
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/*.deb
+            build/*.tar.gz
+          generate_release_notes: true
+          body: |
+            Порт MCP-сервера Confaster (1c-search) для Linux.
+            Апстрим: ConfasterMCP ${{ steps.ver.outputs.upstream }}.
+            Подробности — CHANGELOG.md.

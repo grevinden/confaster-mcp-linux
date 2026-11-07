@@ -10,6 +10,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${1:-$ROOT/dist}"
+CC="${CC:-gcc}"
 GRAMMAR_SHA=b38125de221486a6581bb01e06ab7e392d26430e   # alkoleft/tree-sitter-bsl, master
 RUNTIME_VER=0.25.6                                      # tree-sitter/tree-sitter
 WORK="$(mktemp -d)"

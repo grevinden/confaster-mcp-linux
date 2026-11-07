@@ -19,3 +19,4 @@ scripts/fetch-original.sh
 | Дата загрузки | 2026-11-07 |
 | sha256 архива | `a4f2221c42de6ca3a4e0b40b4574101be3039966bf54adc68dd2fea0e9128a98` |
 | sha256 `Libs/ConfasterMCP/ConfasterMCP.dll` | `624bfd222496228afdfca0360ff3c7433b9687421e90cd97df0c07d63026000f` |
+| AssemblyInformationalVersion | `1.0.0+0c31141deae5218224b85ac20ca26b28e5afdd47` |

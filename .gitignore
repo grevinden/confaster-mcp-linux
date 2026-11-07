@@ -11,3 +11,6 @@ dist/
 *.db-shm
 *.db-wal
 /libtree-sitter-bsl.so
+
+# сборка пакетов
+/build/

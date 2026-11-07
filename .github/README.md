@@ -1,72 +1,82 @@
-# ConfasterMCP — порт под Linux
+# ConfasterMCP для Linux
 
-MCP-сервер «1c-search» из состава [Confaster](https://confaster.ru/) — инструмента
-поиска по выгрузкам конфигураций 1С. Оригинал распространяется как Windows-сборка;
-этот репозиторий содержит порт сервера под Linux: рабочий исходник, сборка, скрипты.
+[![CI](https://github.com/grevinden/confaster-mcp-linux/actions/workflows/ci.yml/badge.svg)](https://github.com/grevinden/confaster-mcp-linux/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/grevinden/confaster-mcp-linux)](https://github.com/grevinden/confaster-mcp-linux/releases)
 
-Порт создан декомпиляцией `ConfasterMCP.dll` оригинального дистрибутива
-(см. `ORIGINAL.md`) с последующей доводкой под Linux.
+Порт MCP-сервера **1c-search** из состава [Confaster](https://confaster.ru/) под
+Linux: поиск по выгрузкам конфигураций 1С — текст, символы, вызовы, объекты
+метаданных, справка платформы. Работает с любым MCP-клиентом.
 
-## Статус
-
-| Возможность | Состояние |
+| | |
 |---|---|
-| 17 инструментов поиска по коду (`search_code`, `sync_index`, `stats`, …) | работает |
-| Справка 1С (`search_1c_help`, `get_1c_help_topic`, `list_1c_help_versions`, `reindex_1c_help`) | работает, платформа ищется в `/opt/1cv8` и `/opt/1C/1cv8` |
-| Символьные инструменты (`find_symbol`, `get_symbol_context`, `find_references`, `impact_analysis`) | работает через собранную `libtree-sitter-bsl.so` (`scripts/build-tree-sitter.sh`) |
-| GUI-приложение Confaster.exe | не портируется — только MCP-сервер |
+| Апстрим | ConfasterMCP `1.0.0+0c31141d` (дистрибутив от 2026-11-07) |
+| Версия порта | `1.0.0-port.1` |
+| Паритет | 17/17 инструментов оригинала совпадают по описаниям и схемам, плюс 4 инструмента справки |
+| Пакеты | `.deb` (amd64, arm64) и бинарные архивы в [Releases](https://github.com/grevinden/confaster-mcp-linux/releases) |
 
-## Требования
-
-- .NET 8 runtime (`Microsoft.NETCore.App` 8.0+): `dotnet --list-runtimes`.
-- `gcc` — для сборки нативной библиотеки грамматики при сборке порта.
-- Выгрузка конфигурации 1С (каталог с `.xml`/`.bsl`) — то же, что подаётся оригинальному серверу на Windows.
-
-## Сборка и запуск
+## Быстрый старт
 
 ```bash
-scripts/build.sh                                    # сборка в dist/
-scripts/run-mcp.sh --export-root /путь/к/выгрузке   # запуск сервера (stdio)
+sudo dpkg -i confaster-mcp_1.0.0-port.1_amd64.deb
 ```
 
-Сервер говорит по MCP поверх stdin/stdout и сам создаёт индекс
-`<выгрузка>/.index/onec_search.db`. Нативная `libe_sqlite3.so` для linux-x64
-входит в сборку (`dist/runtimes/`), ничего доустанавливать не нужно.
-
-Аргументы сервера: `--export-root <путь>`, `--extension-root <имя|путь>`
-(несколько), `--disabled-tool <имя>` (несколько).
-
-## Подключение клиента
-
-Пример для любого MCP-клиента, работающего через stdio:
+Подключение в MCP-клиенте:
 
 ```json
 {
   "mcpServers": {
     "1c-search": {
-      "command": "/путь/к/Confaster/scripts/run-mcp.sh",
+      "command": "/usr/bin/confaster-mcp",
       "args": ["--export-root", "/путь/к/выгрузке/конфигурации"]
     }
   }
 }
 ```
 
+Расширения — дополнительными `--extension-root <путь>`. Индекс создаётся сам
+в `<выгрузка>/.index/onec_search.db`.
+
+## Из исходников
+
+```bash
+git clone https://github.com/grevinden/confaster-mcp-linux.git
+cd confaster-mcp-linux
+scripts/build.sh
+scripts/run-mcp.sh --export-root /путь/к/выгрузке
+```
+
+Нужны .NET 8 SDK и gcc (для нативной библиотеки tree-sitter).
+
+## Документация
+
+Полное руководство — в каталоге [docs/](docs/README.md):
+
+- [Установка](docs/install.md) · [Сборка](docs/build.md) · [Запуск и подключение](docs/usage.md)
+- [Инструменты](docs/tools.md) · [Устройство](docs/architecture.md)
+- [Портирование и аудит потерь](docs/porting.md)
+- [Релизы и обновление апстрима](docs/releases.md) · [Диагностика](docs/troubleshooting.md)
+
+История версий — [CHANGELOG.md](CHANGELOG.md).
+
 ## Устройство репозитория
 
-- `src/ConfasterMCP/` — исходники порта. Отличия от оригинала: csproj на net8.0,
-  `PackageReference` вместо `HintPath`, добавлен `System.Text.Encoding.CodePages`,
-  поиск платформы 1С и раскладка файлов справки с учётом Linux
-  (`HelpIndexer.FindPlatformPath`, `HelpIndexer.GetHelpDirectory`).
-- `scripts/fetch-original.sh` — скачать последний дистрибутив и распаковать в `original/`.
-- `ORIGINAL.md` — источник, хеши загруженной копии.
-- `original/`, `dist/` — в git не входят.
+```text
+src/ConfasterMCP/        декомпилированный исходник порта (.NET 8)
+scripts/                 сборка, пакеты, смоук-тест, сверка с оригиналом
+packaging/               обёртка /usr/bin и man-страница
+docs/                    документация
+.github/                 эта страница, workflows CI и Release
+VERSION                  версия порта (<апстрим>-port.N)
+ORIGINAL.md              источник, хеши оригинального дистрибутива
+```
 
-## tree-sitter
+`original/` (дистрибутив) и `build/`, `dist/` в git не входят и
+восстанавливаются скриптами.
 
-Символьные инструменты требуют нативную библиотеку грамматики BSL. Сервер ищет
-`libtree-sitter-bsl.so` рядом с `ConfasterMCP.dll` (и в системных путях); без неё
-остальные инструменты работают как обычно. `scripts/build.sh` собирает её автоматически
-(нужен `gcc`), отдельный вызов: `scripts/build-tree-sitter.sh [каталог-назначения]`.
-Собирается единой библиотекой из runtime tree-sitter и генерированной грамматики
-[alkoleft/tree-sitter-bsl](https://github.com/alkoleft/tree-sitter-bsl), версии
-зафиксированы в скрипте.
+## Происхождение
+
+Сервер получен декомпиляцией оригинального `ConfasterMCP.dll` и доработкой под
+Linux. Права на оригинальный продукт принадлежат авторам Confaster; этот
+репозиторий — сообществный порт, распространяется как есть, без гарантий.
+Графическая оболочка `Confaster.exe` (WinForms + WebView2) не портирована —
+она Windows-only, её роль выполняет MCP-клиент.

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Обёртка MCP-сервера Confaster (пакет confaster-mcp).
+exec /usr/lib/confaster-mcp/ConfasterMCP "$@"
