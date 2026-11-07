@@ -136,5 +136,17 @@ OpenCode и т.п.); в клиентах с другим форматом важ
 `1c-help/8.3.27.2342` рядом с приложением или `/usr/share/confaster-mcp/1c-help`
 в пакете. Установленная платформа 1С не требуется. Порядок поиска:
 `CONFASTER_1C_HELP_PATH`, `1c-help/` рядом с бинарником,
-`/usr/share/confaster-mcp/1c-help`, затем установленная платформа. Индекс
-строится один раз и хранится в `~/.config/Confaster/HelpIndex/help.db`.
+`/usr/share/confaster-mcp/1c-help`, затем установленная платформа.
+
+Индекс справки строится один раз и хранится в
+`$XDG_CONFIG_HOME/Confaster/HelpIndex/help.db` (при пустой переменной —
+`~/.config/Confaster/HelpIndex/help.db`). В нём три раздела: `syntax`
+(объектная модель и встроенный язык), `language` (операторы и выражения),
+`query` (язык запросов). Раздел задаётся параметром `category` у
+`search_1c_help`:
+
+```json
+{"query": "ПОМЕСТИТЬ", "category": "query", "limit": 5}
+```
+
+Проверить индекс целиком, не трогая рабочий: `scripts/check-help-index.py`.

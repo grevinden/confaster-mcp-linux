@@ -43,6 +43,9 @@ jobs:
           mkdir -p /tmp/rel && tar xzf build/confaster-mcp_*_linux-amd64.tar.gz -C /tmp/rel
           scripts/smoke-test.sh /tmp/rel/ConfasterMCP
 
+      - name: Справка в собранном архиве
+        run: scripts/check-help-index.py /tmp/rel/ConfasterMCP
+
       - name: Версия апстрима
         id: ver
         run: echo "upstream=$(tr -d '[:space:]' < VERSION | cut -d- -f1)" >> "$GITHUB_OUTPUT"

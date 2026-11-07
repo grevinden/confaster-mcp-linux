@@ -24,6 +24,40 @@
 Если задана `CONFASTER_1C_HELP_PATH`, она должна указывать на существующий
 каталог с `.hbk`. Состояние индекса видно по строкам `HELP_STATUS:` в stderr.
 
+## В индексе нет языка запросов или встроенного языка
+
+Строки `HELP_STATUS:parsed:` показывают, сколько тем дала каждая книга:
+
+```text
+HELP_STATUS:parsed:syntax:25520
+HELP_STATUS:parsed:language:5
+HELP_STATUS:parsed:query:25
+```
+
+Если строк `language` и `query` нет или счётчики нулевые, проверьте, что рядом
+с `shcntx_ru.hbk` лежат `shlang_ru.hbk` и `shquery_ru.hbk`. Полная проверка
+индекса — свежий индекс во временном каталоге, все три раздела, поиск,
+переиндексация:
+
+```bash
+scripts/check-help-index.py                                   # dist/ConfasterMCP.dll
+scripts/check-help-index.py /usr/lib/confaster-mcp/ConfasterMCP
+```
+
+## Три страницы справки не попадают в индекс
+
+В `shquery_ru.hbk` это `present.html` и `builtin_functions.html`, в
+`shlang_ru.hbk` — `expression_priorities.html`: они сжаты deflate с
+предустановленным словарём упаковщика 1С, а `DeflateStream` такой словарь
+задать не может. Пропускаются 3 страницы из 25 551; остальные 25 550 тем
+индексируются, включая язык запросов.
+
+## Индекс справки оказался в текущем каталоге
+
+Порт хранит его в `$XDG_CONFIG_HOME/Confaster/HelpIndex`, а при пустой
+переменной — в `~/.config/Confaster/HelpIndex`. Каталог `Confaster/` в текущем
+каталоге процесса означает запуск сборки старше `1.0.0-port.7`.
+
 ## «tree-sitter-bsl native library failed to load»
 
 Рядом с приложением нет `libtree-sitter-bsl.so`. Пересоберите:

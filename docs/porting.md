@@ -55,7 +55,9 @@ benchmark и абсолютные пути корня.
 
 Справочные инструменты отдельной сверки не требуют: оригинал на Linux их не
 регистрирует. В порте проверены вручную — индекс платформы 8.3.27.2342,
-25 520 тем, `search_1c_help` и `get_1c_help_topic` возвращают текст темы.
+25 550 тем из трёх книг (`syntax`, `language`, `query`), `search_1c_help` и
+`get_1c_help_topic` возвращают текст темы. Проверка автоматизирована:
+`scripts/check-help-index.py`.
 
 ## Статус инструментов на Linux
 
@@ -78,7 +80,9 @@ benchmark и абсолютные пути корня.
 |---|---|
 | `ConfasterMCP.csproj` | `net8.0`, зависимости через `PackageReference`, nullable-шум декомпилятора в `NoWarn` |
 | `Properties/AssemblyInfo.cs` | удалён служебный атрибут `RefSafetyRulesAttribute` от декомпилятора |
-| `ConfasterMCP.Help/HelpIndexer.cs` | `FindPlatformPath` ищет справку в порядке `CONFASTER_1C_HELP_PATH` → `1c-help/` рядом с бинарником → `/usr/share/confaster-mcp/1c-help` → установленная платформа; `GetHelpDirectory` берёт `bin/`, если там `.hbk`, иначе корень версии |
+| `ConfasterMCP.Help/HelpIndexer.cs` | `FindPlatformPath` ищет справку в порядке `CONFASTER_1C_HELP_PATH` → `1c-help/` рядом с бинарником → `/usr/share/confaster-mcp/1c-help` → установленная платформа; `GetHelpDirectory` берёт `bin/`, если там `.hbk`, иначе корень версии; в stderr пишется `HELP_STATUS:parsed:<category>:<n>` по каждой книге |
+| `ConfasterMCP.Help/HbkParser.cs` | zip внутри `.hbk` разбирается по локальным заголовкам вместо `ZipArchive`: без central directory видны все три книги, а не только `shcntx_ru.hbk` |
+| `ConfasterMCP.Help/HelpDatabase.cs` | каталог индекса: `ApplicationData` (на Linux — только при заданном `XDG_CONFIG_HOME`), иначе `~/.config`; поиск пробует фразу, затем `AND` по словам |
 | `data/1c-help/` | файлы справки платформы 1С в поставке |
 | `libtree-sitter-bsl.so` | собрана из исходников грамматики вместо Windows-DLL |
 | пакетирование | `.deb` и бинарный архив, self-contained + ReadyToRun |
@@ -101,4 +105,5 @@ scripts/build.sh                          # порт в dist/
 scripts/compare-upstream.sh               # сверка tools/list
 scripts/compare-behavior.sh <выгрузка>    # сверка фактических ответов
 scripts/smoke-test.sh                     # протокольный смоук-тест
+scripts/check-help-index.py               # индекс справки: три книги, поиск, reindex
 ```

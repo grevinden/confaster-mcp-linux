@@ -18,7 +18,7 @@
 Короткая шпаргалка:
 
 ```bash
-sudo dpkg -i confaster-mcp_1.0.0-port.6_amd64.deb     # установка
+sudo dpkg -i confaster-mcp_1.0.0-port.7_amd64.deb     # установка
 confaster-mcp --export-root /путь/к/выгрузке            # запуск (stdio)
 ```
 

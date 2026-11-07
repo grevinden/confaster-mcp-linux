@@ -3,7 +3,7 @@
 ## Версионирование
 
 - `VERSION` в корне — единственный источник версии, формат `<апстрим>-port.<N>`.
-- Тег GitHub — `v` + `VERSION`, например `v1.0.0-port.6`.
+- Тег GitHub — `v` + `VERSION`, например `v1.0.0-port.7`.
 - `CHANGELOG.md` — история: таблица соответствия версий и изменения по релизам.
 - Точный апстрим определяется по `AssemblyInformationalVersion` из
   `ConfasterMCP.dll`: `1.0.0+0c31141d…` — версия 1.0.0 и коммит апстрима.
@@ -43,10 +43,11 @@ scripts/check-upstream.sh
 
 3. **Перенести исходник и вернуть правки порта.** Правок ровно три файла
    (см. [porting.md](porting.md)): `ConfasterMCP.csproj`,
-   `Properties/AssemblyInfo.cs`, `ConfasterMCP.Help/HelpIndexer.cs`.
-   Рабочий приём: сохранить эти три файла, заменить остальной `src/ConfasterMCP`
-   свежей декомпиляцией, вернуть файлы на место. Если апстрим менял
-   `HelpIndexer`, правку про Linux-раскладку нужно наложить заново.
+   `Properties/AssemblyInfo.cs`, `ConfasterMCP.Help/HelpIndexer.cs`,
+   `ConfasterMCP.Help/HbkParser.cs`, `ConfasterMCP.Help/HelpDatabase.cs`.
+   Рабочий приём: сохранить эти файлы, заменить остальной `src/ConfasterMCP`
+   свежей декомпиляцией, вернуть файлы на место. Если апстрим менял файлы
+   справки, правки нужно наложить заново.
 
 4. **Собрать и сверить**
 
@@ -59,6 +60,14 @@ scripts/check-upstream.sh
 
    Дополнительно: прогнать `sync_index` и `find_symbol` на реальной выгрузке,
    проверить инструменты справки.
+
+   ```bash
+   scripts/check-help-index.py /usr/lib/confaster-mcp/ConfasterMCP
+   ```
+
+   Скрипт строит индекс во временном каталоге и проверяет, что в нём все три
+   книги (`syntax`, `language`, `query`), что поиск находит темы языка запросов
+   и встроенного языка и что `reindex_1c_help` даёт тот же снимок.
 
 5. **Записать версию**
 

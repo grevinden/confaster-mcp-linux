@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Microsoft.Data.Sqlite;
 
 namespace ConfasterMCP.Help;
@@ -13,10 +14,30 @@ internal sealed class HelpDatabase : IDisposable
 
 	internal HelpDatabase()
 	{
-		string text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Confaster", "HelpIndex");
+		string text = Path.Combine(GetConfigDirectory(), "Confaster", "HelpIndex");
 		Directory.CreateDirectory(text);
 		_dbPath = Path.Combine(text, "help.db");
 		_conn = OpenConnection(_dbPath);
+	}
+
+	// .NET на Linux возвращает ApplicationData только при заданном XDG_CONFIG_HOME,
+	// иначе пустую строку — индекс справки уходил бы в текущий каталог процесса.
+	private static string GetConfigDirectory()
+	{
+		string text = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+		if (string.IsNullOrWhiteSpace(text))
+		{
+			string text2 = Environment.GetEnvironmentVariable("HOME");
+			if (!string.IsNullOrWhiteSpace(text2))
+			{
+				text = Path.Combine(text2, ".config");
+			}
+		}
+		if (string.IsNullOrWhiteSpace(text))
+		{
+			text = Path.GetTempPath();
+		}
+		return text;
 	}
 
 	internal void Recreate()
@@ -109,44 +130,87 @@ internal sealed class HelpDatabase : IDisposable
 
 	internal List<HelpSearchResult> Search(string query, int limit = 5, string? category = null)
 	{
-		List<HelpSearchResult> list = new List<HelpSearchResult>();
-		string sql = ((!string.IsNullOrEmpty(category) && !(category == "all")) ? "SELECT topic_id, title, snippet(topics, 2, '>>', '<<', '...', 30) as excerpt\n                        FROM topics WHERE topics MATCH @q AND category = @cat ORDER BY rank LIMIT @l" : "SELECT topic_id, title, snippet(topics, 2, '>>', '<<', '...', 30) as excerpt\n                        FROM topics WHERE topics MATCH @q ORDER BY rank LIMIT @l");
-		try
+		// Сначала фразовый поиск (как в оригинале). Если фраза не нашлась,
+		// повторяем как AND по словам: запросы вида «ВЫБРАТЬ ИЗ ГДЕ» иначе
+		// дают ноль, хотя все слова в теме есть.
+		foreach (string item in BuildMatchQueries(query))
 		{
-			using SqliteCommand sqliteCommand = CreateCommand(sql);
-			sqliteCommand.Parameters.AddWithValue("@q", "\"" + query.Replace("\"", "\"\"") + "\"");
-			sqliteCommand.Parameters.AddWithValue("@l", limit);
-			if (!string.IsNullOrEmpty(category) && category != "all")
+			try
 			{
-				sqliteCommand.Parameters.AddWithValue("@cat", category);
-			}
-			using SqliteDataReader sqliteDataReader = sqliteCommand.ExecuteReader();
-			while (sqliteDataReader.Read())
-			{
-				list.Add(new HelpSearchResult
+				List<HelpSearchResult> list = SearchFts(item, limit, category);
+				if (list.Count > 0)
 				{
-					TopicId = sqliteDataReader.GetString(0),
-					Title = sqliteDataReader.GetString(1),
-					Excerpt = sqliteDataReader.GetString(2)
-				});
+					return list;
+				}
+			}
+			catch (SqliteException ex) when (ex.SqliteErrorCode == 1)
+			{
+				break;
 			}
 		}
-		catch (SqliteException ex) when (ex.SqliteErrorCode == 1)
+		return SearchLike(query, limit);
+	}
+
+	private static IEnumerable<string> BuildMatchQueries(string query)
+	{
+		string text = query.Trim();
+		if (text.Length == 0)
 		{
-			string sql2 = "SELECT topic_id, title, substr(content, 1, 200) as excerpt\n                    FROM topics WHERE title LIKE @q2 OR content LIKE @q2 LIMIT @l";
-			using SqliteCommand sqliteCommand2 = CreateCommand(sql2);
-			sqliteCommand2.Parameters.AddWithValue("@q2", "%" + query + "%");
-			sqliteCommand2.Parameters.AddWithValue("@l", limit);
-			using SqliteDataReader sqliteDataReader2 = sqliteCommand2.ExecuteReader();
-			while (sqliteDataReader2.Read())
+			yield break;
+		}
+		yield return QuoteFts(text);
+		string[] array = text.Split(new char[3] { ' ', '\t', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+		if (array.Length > 1)
+		{
+			yield return string.Join(" ", array.Select(QuoteFts));
+		}
+	}
+
+	private static string QuoteFts(string term)
+	{
+		return "\"" + term.Replace("\"", "\"\"") + "\"";
+	}
+
+	private List<HelpSearchResult> SearchFts(string matchQuery, int limit, string? category)
+	{
+		List<HelpSearchResult> list = new List<HelpSearchResult>();
+		string sql = ((!string.IsNullOrEmpty(category) && !(category == "all")) ? "SELECT topic_id, title, snippet(topics, 2, '>>', '<<', '...', 30) as excerpt\n                        FROM topics WHERE topics MATCH @q AND category = @cat ORDER BY rank LIMIT @l" : "SELECT topic_id, title, snippet(topics, 2, '>>', '<<', '...', 30) as excerpt\n                        FROM topics WHERE topics MATCH @q ORDER BY rank LIMIT @l");
+		using SqliteCommand sqliteCommand = CreateCommand(sql);
+		sqliteCommand.Parameters.AddWithValue("@q", matchQuery);
+		sqliteCommand.Parameters.AddWithValue("@l", limit);
+		if (!string.IsNullOrEmpty(category) && category != "all")
+		{
+			sqliteCommand.Parameters.AddWithValue("@cat", category);
+		}
+		using SqliteDataReader sqliteDataReader = sqliteCommand.ExecuteReader();
+		while (sqliteDataReader.Read())
+		{
+			list.Add(new HelpSearchResult
 			{
-				list.Add(new HelpSearchResult
-				{
-					TopicId = sqliteDataReader2.GetString(0),
-					Title = sqliteDataReader2.GetString(1),
-					Excerpt = sqliteDataReader2.GetString(2)
-				});
-			}
+				TopicId = sqliteDataReader.GetString(0),
+				Title = sqliteDataReader.GetString(1),
+				Excerpt = sqliteDataReader.GetString(2)
+			});
+		}
+		return list;
+	}
+
+	private List<HelpSearchResult> SearchLike(string query, int limit)
+	{
+		List<HelpSearchResult> list = new List<HelpSearchResult>();
+		string sql2 = "SELECT topic_id, title, substr(content, 1, 200) as excerpt\n            FROM topics WHERE title LIKE @q2 OR content LIKE @q2 LIMIT @l";
+		using SqliteCommand sqliteCommand2 = CreateCommand(sql2);
+		sqliteCommand2.Parameters.AddWithValue("@q2", "%" + query + "%");
+		sqliteCommand2.Parameters.AddWithValue("@l", limit);
+		using SqliteDataReader sqliteDataReader2 = sqliteCommand2.ExecuteReader();
+		while (sqliteDataReader2.Read())
+		{
+			list.Add(new HelpSearchResult
+			{
+				TopicId = sqliteDataReader2.GetString(0),
+				Title = sqliteDataReader2.GetString(1),
+				Excerpt = sqliteDataReader2.GetString(2)
+			});
 		}
 		return list;
 	}

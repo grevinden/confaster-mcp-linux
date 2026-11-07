@@ -134,6 +134,7 @@ internal sealed class HelpIndexer
 				}
 				Console.Error.WriteLine("HELP_STATUS:indexing:0:0:Парсинг " + item + "...");
 				int num2 = 0;
+				int num4 = 0;
 				_db.BeginTransaction();
 				try
 				{
@@ -143,6 +144,7 @@ internal sealed class HelpIndexer
 						_db.InsertTopic(topicId, item3.Title, item3.Content, item2, version);
 						num++;
 						num2++;
+						num4++;
 						if (num2 >= 100)
 						{
 							_db.Commit();
@@ -163,6 +165,7 @@ internal sealed class HelpIndexer
 					{
 					}
 				}
+				Console.Error.WriteLine($"HELP_STATUS:parsed:{item2}:{num4}");
 			}
 			_db.SetMeta("indexed_version", version);
 			_db.SetMeta("topic_count", num.ToString());
