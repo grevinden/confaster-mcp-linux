@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Проверка индекса справки 1С: все три книги, категории и поиск.
+"""Проверка индекса справки 1С: книги, категории, английский фолбэк и поиск.
 
 Запуск: scripts/check-help-index.py [путь/к/ConfasterMCP.dll]
 
 Индекс строится в изолированном HOME (временный каталог), рабочий
 ~/.config/Confaster/HelpIndex/help.db не трогается. Скрипт проверяет:
-  * индекс содержит все три книги — категории syntax, language, query;
+  * индекс содержит три книги — категории syntax, language, query;
   * поиск находит темы языка запросов и встроенного языка;
   * фразовый запрос с несколькими словами находит темы (откат на AND);
+  * повреждённые страницы восстановлены английским дублем ((en), фолбэк);
   * get_1c_help_topic отдаёт непустой текст.
 
 Возвращает 0 при успехе, 1 при провале — пригоден для CI.
@@ -25,7 +26,9 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DLL = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "dist", "ConfasterMCP.dll")
 
-MIN_TOPICS = {"syntax": 25000, "language": 30, "query": 110}
+MIN_TOPICS = {"syntax": 25000, "language": 36, "query": 125}
+
+MIN_FALLBACK_TOPICS = 12
 
 
 def fail(message):
@@ -108,6 +111,8 @@ def main():
             return fail("нет файла индекса %s" % db_path)
         conn = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True)
         counts = dict(conn.execute("SELECT category, COUNT(*) FROM topics GROUP BY category"))
+        fallback_topics = conn.execute(
+            "SELECT COUNT(*) FROM topics WHERE title LIKE '% (en)'").fetchone()[0]
         conn.close()
 
         problems = []
@@ -117,6 +122,15 @@ def main():
                 problems.append("категория %s: %d тем, ожидалось не меньше %d" % (category, got, minimum))
         if sum(counts.values()) != topic_count:
             problems.append("topic_count=%d, а в базе %d" % (topic_count, sum(counts.values())))
+        if fallback_topics < MIN_FALLBACK_TOPICS:
+            problems.append("тем английского фолбэка %d, ожидалось не меньше %d"
+                            % (fallback_topics, MIN_FALLBACK_TOPICS))
+
+        err.seek(0)
+        stderr_text = err.read().decode("utf-8", "replace")
+        for expected in ("HELP_STATUS:fallback:language:5", "HELP_STATUS:fallback:query:7"):
+            if expected not in stderr_text:
+                problems.append("в stderr нет строки %s" % expected)
 
         query_lang = call("search_1c_help", {"query": "Синтаксис текста запросов", "limit": 3})
         if "%s/query/root" % version not in (query_lang.get("text") or ""):
@@ -140,6 +154,22 @@ def main():
         if len(keyword.get("content") or "") < 50:
             problems.append("get_1c_help_topic не отдал тему %s/query/KeyWordsSELECT" % version)
 
+        english = call("get_1c_help_topic", {"topic_id": "%s/query/STRING" % version})
+        if len(english.get("content") or "") < 100:
+            problems.append("нет английского фолбэка для %s/query/STRING" % version)
+        elif "String" not in (english.get("content") or ""):
+            problems.append("тема %s/query/STRING не похожа на описание функции STRING" % version)
+        if "(en)" not in (english.get("title") or ""):
+            problems.append("у темы %s/query/STRING нет пометки (en): %r" % (version, english.get("title")))
+
+        builtin = call("get_1c_help_topic", {"topic_id": "%s/query/builtin_functions" % version})
+        if len(builtin.get("content") or "") < 100:
+            problems.append("нет английского фолбэка для %s/query/builtin_functions" % version)
+
+        datetime_search = call("search_1c_help", {"query": "DATETIME", "limit": 5, "category": "query"})
+        if "%s/query/" % version not in (datetime_search.get("text") or ""):
+            problems.append("поиск «DATETIME» не находит тем языка запросов")
+
         words = call("search_1c_help", {"query": "ВЫБРАТЬ ИЗ ГДЕ", "limit": 3})
         if not words.get("total"):
             problems.append("запрос из нескольких слов не находит ничего (откат на AND не работает)")
@@ -157,7 +187,8 @@ def main():
         if problems:
             return fail("; ".join(problems))
 
-        print("books:", ", ".join("%s=%d" % item for item in sorted(counts.items())))
+        print("books:", ", ".join("%s=%d" % item for item in sorted(counts.items())),
+              "| english fallback:", fallback_topics)
         print("help index:", version, "| topics:", topic_count, "| built in %.1f s" % (time.time() - started))
 
         # Повторная индексация должна дать тот же снимок (reindex_1c_help).

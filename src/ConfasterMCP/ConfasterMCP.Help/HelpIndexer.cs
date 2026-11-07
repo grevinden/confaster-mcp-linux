@@ -114,19 +114,20 @@ internal sealed class HelpIndexer
 		{
 			Console.Error.WriteLine("HELP_STATUS:indexing:0:0:Начало индексации справки " + version);
 			_db.DeleteTopicsByVersion(version);
-			(string, string)[] obj = new(string, string)[3]
+			(string, string, string?)[] obj = new(string, string, string?)[3]
 			{
-				("shcntx_ru.hbk", "syntax"),
-				("shlang_ru.hbk", "language"),
-				("shquery_ru.hbk", "query")
+				("shcntx_ru.hbk", "syntax", null),
+				("shlang_ru.hbk", "language", "shlang_root.hbk"),
+				("shquery_ru.hbk", "query", "shquery_root.hbk")
 			};
 			int num = 0;
-			(string, string)[] array = obj;
+			(string, string, string?)[] array = obj;
 			for (int i = 0; i < array.Length; i++)
 			{
-				(string, string) tuple = array[i];
+				(string, string, string?) tuple = array[i];
 				string item = tuple.Item1;
 				string item2 = tuple.Item2;
+				string? item4 = tuple.Item3;
 				string text = Path.Combine(binPath, item);
 				if (!File.Exists(text))
 				{
@@ -135,10 +136,11 @@ internal sealed class HelpIndexer
 				Console.Error.WriteLine("HELP_STATUS:indexing:0:0:Парсинг " + item + "...");
 				int num2 = 0;
 				int num4 = 0;
+				HashSet<string> failures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 				_db.BeginTransaction();
 				try
 				{
-					foreach (HelpTopic item3 in HbkParser.Parse(text))
+					foreach (HelpTopic item3 in HbkParser.Parse(text, failures))
 					{
 						string topicId = $"{version}/{item2}/{item3.TopicName}";
 						_db.InsertTopic(topicId, item3.Title, item3.Content, item2, version);
@@ -166,6 +168,12 @@ internal sealed class HelpIndexer
 					}
 				}
 				Console.Error.WriteLine($"HELP_STATUS:parsed:{item2}:{num4}");
+				int num5 = IndexFallback(binPath, item4, item2, version, failures);
+				if (num5 > 0)
+				{
+					num += num5;
+					Console.Error.WriteLine($"HELP_STATUS:fallback:{item2}:{num5}");
+				}
 			}
 			_db.SetMeta("indexed_version", version);
 			_db.SetMeta("topic_count", num.ToString());
@@ -180,6 +188,52 @@ internal sealed class HelpIndexer
 		{
 			Interlocked.Exchange(ref _indexingFlag, 0);
 		}
+	}
+
+	private int IndexFallback(string binPath, string? rootBook, string category, string version, HashSet<string> failures)
+	{
+		if (rootBook == null || failures.Count == 0)
+		{
+			return 0;
+		}
+		string text = Path.Combine(binPath, rootBook);
+		if (!File.Exists(text))
+		{
+			return 0;
+		}
+		int num = 0;
+		_db.BeginTransaction();
+		try
+		{
+			foreach (HelpTopic item in HbkParser.Parse(text))
+			{
+				if (!failures.Contains(item.TopicName))
+				{
+					continue;
+				}
+				string topicId = $"{version}/{category}/{item.TopicName}";
+				string content = "Английская версия: русская страница повреждена в файле справки 1С.\n\n" + item.Content;
+				_db.InsertTopic(topicId, item.Title + " (en)", content, category, version);
+				num++;
+				if (num % 100 == 0)
+				{
+					_db.Commit();
+					_db.BeginTransaction();
+				}
+			}
+			_db.Commit();
+		}
+		catch
+		{
+			try
+			{
+				_db.Rollback();
+			}
+			catch
+			{
+			}
+		}
+		return num;
 	}
 
 	internal static string? FindPlatformPath()

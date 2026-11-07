@@ -31,7 +31,7 @@ internal static class HbkParser
 
 	private static readonly Regex TitleRegex = new Regex("<(?:h1|h2|title)[^>]*>(.*?)</(?:h1|h2|title)>", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.Singleline);
 
-	internal static IEnumerable<HelpTopic> Parse(string hbkPath)
+	internal static IEnumerable<HelpTopic> Parse(string hbkPath, ISet<string>? failures = null)
 	{
 		byte[] array = File.ReadAllBytes(hbkPath);
 		if (array.Length < 100)
@@ -46,13 +46,14 @@ internal static class HbkParser
 		int num = 0;
 		while (num >= 0 && num + LocalHeaderSize <= array2.Length)
 		{
-			int num2 = FindLocalHeader(array2, num);
+			int num2 = FindLocalHeader(array2, num, failures);
 			if (num2 < 0)
 			{
 				yield break;
 			}
 			int num3 = BitConverter.ToUInt16(array2, num2 + 6);
 			int num4 = BitConverter.ToUInt16(array2, num2 + 8);
+			uint crc = BitConverter.ToUInt32(array2, num2 + 14);
 			int num5 = (int)BitConverter.ToUInt32(array2, num2 + 18);
 			int num9 = (int)BitConverter.ToUInt32(array2, num2 + 22);
 			int num6 = BitConverter.ToUInt16(array2, num2 + 26);
@@ -62,9 +63,10 @@ internal static class HbkParser
 			num = num8 + num5;
 			if (text.IndexOf('\0') < 0)
 			{
-				byte[] array3 = ReadEntryData(array2, num8, num5, num4, num9);
+				byte[] array3 = ReadEntryData(array2, num8, num5, num4, num9, crc);
 				if (array3 == null || array3.Length == 0)
 				{
+					failures?.Add(Path.GetFileNameWithoutExtension(text));
 					continue;
 				}
 				// Расширение не показатель: в shquery_ru.hbk страницы называются
@@ -125,18 +127,69 @@ internal static class HbkParser
 
 	// Локальные заголовки идут подряд; после данных записи снова ищем сигнатуру,
 	// потому что между записями может встретиться выравнивание.
-	private static int FindLocalHeader(byte[] zip, int start)
+	private static int FindLocalHeader(byte[] zip, int start, ISet<string>? failures = null)
 	{
 		int num = start;
 		while (num + LocalHeaderSize <= zip.Length)
 		{
-			if (zip[num] == 80 && zip[num + 1] == 75 && zip[num + 2] == 3 && zip[num + 3] == 4 && IsPlausibleLocalHeader(zip, num))
+			if (zip[num] == 80 && zip[num + 1] == 75 && zip[num + 2] == 3 && zip[num + 3] == 4)
 			{
-				return num;
+				if (IsPlausibleLocalHeader(zip, num))
+				{
+					return num;
+				}
+				// Последняя запись книги может быть обрезана: заголовок и имя
+				// читаются, а объявленный размер данных выходит за границы
+				// потока. Имя нужно сохранить, чтобы подставить английский дубль.
+				CollectTruncatedEntryName(zip, num, failures);
 			}
 			num++;
 		}
 		return -1;
+	}
+
+	private static void CollectTruncatedEntryName(byte[] zip, int header, ISet<string>? failures)
+	{
+		if (failures == null || header < 0 || header + LocalHeaderSize > zip.Length)
+		{
+			return;
+		}
+		int num = BitConverter.ToUInt16(zip, header + 6);
+		int num2 = BitConverter.ToUInt16(zip, header + 8);
+		if (num2 != 0 && num2 != 8)
+		{
+			return;
+		}
+		if ((num & 8) != 0)
+		{
+			return;
+		}
+		int num3 = BitConverter.ToUInt16(zip, header + 26);
+		int num4 = BitConverter.ToUInt16(zip, header + 28);
+		if (num3 <= 0 || num3 > MaxEntryNameBytes || num4 > MaxExtraBytes)
+		{
+			return;
+		}
+		long num5 = header + LocalHeaderSize + num3 + num4;
+		long num6 = (uint)BitConverter.ToUInt32(zip, header + 18);
+		if (num5 + num6 <= zip.Length)
+		{
+			return;
+		}
+		int num7 = header + LocalHeaderSize;
+		for (int i = 0; i < num3; i++)
+		{
+			byte b = zip[num7 + i];
+			if (b < 32 || b == 127)
+			{
+				return;
+			}
+		}
+		string text = DecodeEntryName(zip, num7, num3, (num & 0x800) != 0);
+		if (text.Length > 0)
+		{
+			failures.Add(Path.GetFileNameWithoutExtension(text));
+		}
 	}
 
 	private static bool IsPlausibleLocalHeader(byte[] zip, int header)
@@ -206,12 +259,11 @@ internal static class HbkParser
 		return num < data.Length && data[num] == 60;
 	}
 
-	// Часть страниц в shlang_ru.hbk и shquery_ru.hbk сжата deflate с
-	// предустановленным словарём упаковщика 1С. DeflateStream словарь задать не
-	// может: такие записи либо падают с ошибкой, либо дают усечённый и битый
-	// текст. Поэтому результат сверяется с полем uncompressed size — частичный
-	// поток отбрасывается и в индекс не попадает.
-	private static byte[]? ReadEntryData(byte[] zip, int offset, int compressedSize, int method, int uncompressedSize)
+	// Тринадцать страниц в русских книгах shlang_ru.hbk и shquery_ru.hbk
+	// повреждены: deflate-поток не даёт заявленных размеров, часть кодов битая.
+	// Поэтому запись принимается только при совпадении и размера, и CRC-32;
+	// иначе она попадает в failures и заменяется английским дублем.
+	private static byte[]? ReadEntryData(byte[] zip, int offset, int compressedSize, int method, int uncompressedSize, uint crc)
 	{
 		if (compressedSize <= 0 || offset < 0 || offset + compressedSize > zip.Length)
 		{
@@ -219,6 +271,7 @@ internal static class HbkParser
 		}
 		try
 		{
+			byte[] array;
 			if (method == 0)
 			{
 				if (uncompressedSize > 0 && compressedSize != uncompressedSize)
@@ -226,35 +279,69 @@ internal static class HbkParser
 					return null;
 				}
 				int num = Math.Min(compressedSize, MaxEntryBytes);
-				byte[] array = new byte[num];
+				array = new byte[num];
 				Buffer.BlockCopy(zip, offset, array, 0, num);
-				return array;
 			}
-			using MemoryStream memoryStream = new MemoryStream(zip, offset, compressedSize, writable: false);
-			using DeflateStream deflateStream = new DeflateStream(memoryStream, CompressionMode.Decompress);
-			using MemoryStream memoryStream2 = new MemoryStream();
-			byte[] array2 = new byte[16384];
-			int num2 = 0;
-			while (num2 < MaxEntryBytes)
+			else
 			{
-				int num3 = deflateStream.Read(array2, 0, Math.Min(array2.Length, MaxEntryBytes - num2));
-				if (num3 <= 0)
+				using MemoryStream memoryStream = new MemoryStream(zip, offset, compressedSize, writable: false);
+				using DeflateStream deflateStream = new DeflateStream(memoryStream, CompressionMode.Decompress);
+				using MemoryStream memoryStream2 = new MemoryStream();
+				byte[] array2 = new byte[16384];
+				int num2 = 0;
+				while (num2 < MaxEntryBytes)
 				{
-					break;
+					int num3 = deflateStream.Read(array2, 0, Math.Min(array2.Length, MaxEntryBytes - num2));
+					if (num3 <= 0)
+					{
+						break;
+					}
+					memoryStream2.Write(array2, 0, num3);
+					num2 += num3;
 				}
-				memoryStream2.Write(array2, 0, num3);
-				num2 += num3;
+				if (uncompressedSize > 0 && memoryStream2.Length != uncompressedSize)
+				{
+					return null;
+				}
+				array = memoryStream2.ToArray();
 			}
-			if (uncompressedSize > 0 && memoryStream2.Length != uncompressedSize)
+			if (crc != 0 && ComputeCrc32(array) != crc)
 			{
 				return null;
 			}
-			return memoryStream2.ToArray();
+			return array;
 		}
 		catch
 		{
 			return null;
 		}
+	}
+
+	private static readonly uint[] Crc32Table = BuildCrc32Table();
+
+	private static uint[] BuildCrc32Table()
+	{
+		uint[] array = new uint[256];
+		for (uint num = 0u; num < 256; num++)
+		{
+			uint num2 = num;
+			for (int i = 0; i < 8; i++)
+			{
+				num2 = (((num2 & 1) == 0) ? (num2 >> 1) : ((num2 >> 1) ^ 0xEDB88320u));
+			}
+			array[num] = num2;
+		}
+		return array;
+	}
+
+	private static uint ComputeCrc32(byte[] data)
+	{
+		uint num = uint.MaxValue;
+		foreach (byte b in data)
+		{
+			num = Crc32Table[(num ^ b) & 0xFF] ^ (num >> 8);
+		}
+		return num ^ uint.MaxValue;
 	}
 
 	private static string? ReadFileName(byte[] data, int headerAddr)

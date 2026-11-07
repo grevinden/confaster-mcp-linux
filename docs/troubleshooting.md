@@ -6,8 +6,8 @@
 ## В `tools/list` нет инструментов поиска
 
 Сервер запущен без `--export-root` или каталог не существует. Проверьте
-аргументы. При несуществующем корне регистрируются только инструменты справки
-(или ничего, если платформа 1С не найдена).
+аргументы. При несуществующем корне регистрируются только четыре инструмента
+справки.
 
 ## Нет четырёх инструментов справки
 
@@ -19,8 +19,10 @@
 ```
 
 В каталоге версии должны лежать `shcntx_ru.hbk`, `shlang_ru.hbk`,
-`shquery_ru.hbk`. Порядок поиска: `CONFASTER_1C_HELP_PATH`, `1c-help/` рядом
-с бинарником, `/usr/share/confaster-mcp/1c-help`, установленная платформа 1С.
+`shquery_ru.hbk`, а для повреждённых страниц — английские дубли
+`shlang_root.hbk` и `shquery_root.hbk`. Порядок поиска:
+`CONFASTER_1C_HELP_PATH`, `1c-help/` рядом с бинарником,
+`/usr/share/confaster-mcp/1c-help`, установленная платформа 1С.
 Если задана `CONFASTER_1C_HELP_PATH`, она должна указывать на существующий
 каталог с `.hbk`. Состояние индекса видно по строкам `HELP_STATUS:` в stderr.
 
@@ -31,7 +33,10 @@
 ```text
 HELP_STATUS:parsed:syntax:25520
 HELP_STATUS:parsed:language:32
+HELP_STATUS:fallback:language:5
 HELP_STATUS:parsed:query:119
+HELP_STATUS:fallback:query:7
+HELP_STATUS:ready:8.3.27.2342:25683
 ```
 
 Если строк `language` и `query` нет или счётчики близки к нулю, проверьте, что
@@ -44,17 +49,30 @@ scripts/check-help-index.py                                   # dist/ConfasterMC
 scripts/check-help-index.py /usr/lib/confaster-mcp/ConfasterMCP
 ```
 
-## Тринадцать страниц справки не попадают в индекс
+## Повреждённые страницы справки и английский фолбэк
 
-Индексируется 25 671 тема из 25 684. Остальные тринадцать сжаты deflate с
-предустановленным словарём упаковщика 1С, а `DeflateStream` такой словарь
-задать не может: поток обрывается, текст получается битым, и запись
-отбрасывается по сверке с `uncompressed size`. В `shquery_ru.hbk` это
-`LitHum`, `LitType`, `STRING`, `DATEADD`, `INDEXBY`, `present.html`,
-`builtin_functions.html`; в `shlang_ru.hbk` — `struct_TryCatch`, `8`,
-`struct_While`, `SavingSettings`, `expression_priorities.html`, `struct_Raise`.
-Все ключевые слова языка запросов (`ВЫБРАТЬ`, `ГДЕ`, `СОЕДИНЕНИЕ`,
-`СГРУППИРОВАТЬ ПО` и др.) в индексе есть.
+Индексируется 25 683 темы из 25 684. Тринадцать страниц в русских
+`shlang_ru.hbk` и `shquery_ru.hbk` повреждены: deflate-поток не даёт
+заявленных размера и CRC. Запись принимается только при совпадении обоих
+значений, поэтому повреждённая страница отбрасывается.
+
+В `shquery_ru.hbk` это `LitHum`, `LitType`, `STRING`, `DATEADD`, `INDEXBY`,
+`present.html`, `builtin_functions.html`; в `shlang_ru.hbk` — `struct_TryCatch`,
+`8`, `struct_While`, `SavingSettings`, `expression_priorities.html`,
+`struct_Raise`. Для двенадцати из них рядом лежит английский дубль
+(`shquery_root.hbk` или `shlang_root.hbk`), и в индекс попадает его текст:
+заголовок с суффиксом ` (en)`, в начале текста — пояснение о повреждении
+русской страницы. Например, `search_1c_help("DATETIME")` находит страницу
+`query/builtin_functions`, `query/STRING` отдаёт описание функции на
+английском.
+
+Единственная недоступная тема — страница `8` в `shlang_ru.hbk`: в английской
+книге такой страницы нет.
+
+Проверить, что фолбэк сработал: строки `HELP_STATUS:fallback:*` видны в stderr
+сервера (обычно это лог MCP-клиента), а полная проверка — `scripts/check-help-index.py`.
+Скрипт ожидает 12 тем с суффиксом `(en)` и строки
+`HELP_STATUS:fallback:query:7`, `HELP_STATUS:fallback:language:5` в stderr.
 
 ## Индекс справки оказался в текущем каталоге
 

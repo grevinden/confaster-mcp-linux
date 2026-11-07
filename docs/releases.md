@@ -3,7 +3,7 @@
 ## Версионирование
 
 - `VERSION` в корне — единственный источник версии, формат `<апстрим>-port.<N>`.
-- Тег GitHub — `v` + `VERSION`, например `v1.0.0-port.8`.
+- Тег GitHub — `v` + `VERSION`, например `v1.0.0-port.9`.
 - `CHANGELOG.md` — история: таблица соответствия версий и изменения по релизам.
 - Точный апстрим определяется по `AssemblyInformationalVersion` из
   `ConfasterMCP.dll`: `1.0.0+0c31141d…` — версия 1.0.0 и коммит апстрима.
@@ -80,7 +80,7 @@ scripts/check-upstream.sh
 
    ```bash
    mkdir -p data/1c-help/<версия>
-   cp /opt/1cv8/x86_64/<версия>/{shcntx_ru,shlang_ru,shquery_ru}.hbk data/1c-help/<версия>/
+   cp /opt/1cv8/x86_64/<версия>/{shcntx_ru,shlang_ru,shquery_ru,shlang_root,shquery_root}.hbk data/1c-help/<версия>/
    # README.md в каталоге: источник и правообладатель
    git rm -r data/1c-help/<старая версия>
    ```
