@@ -10,14 +10,14 @@ Linux: поиск по выгрузкам конфигураций 1С — те�
 | | |
 |---|---|
 | Апстрим | ConfasterMCP `1.0.0+0c31141d` (дистрибутив от 2026-11-07) |
-| Версия порта | `1.0.0-port.2` |
+| Версия порта | `1.0.0-port.3` |
 | Паритет | 17/17 инструментов оригинала совпадают по описаниям и схемам, плюс 4 инструмента справки |
 | Пакеты | `.deb` (amd64, arm64) и бинарные архивы в [Releases](https://github.com/grevinden/confaster-mcp-linux/releases) |
 
 ## Быстрый старт
 
 ```bash
-sudo dpkg -i confaster-mcp_1.0.0-port.2_amd64.deb
+sudo dpkg -i confaster-mcp_1.0.0-port.3_amd64.deb
 ```
 
 Подключение в MCP-клиенте:

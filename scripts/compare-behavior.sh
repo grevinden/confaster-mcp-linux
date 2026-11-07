@@ -110,9 +110,36 @@ if file and line:
         ("get_file_context", {"file": file, "line": line}),
         ("get_module_functions", {"module_path": file, "limit": 50}),
     ]
-for i, (name, args) in enumerate(calls, start=10):
-    send(i, name, args)
-    results[name] = read_tool(i)
+counter = 10
+for name, args in calls:
+    send(counter, name, args)
+    results[name] = read_tool(counter)
+    counter += 1
+
+# Объектные инструменты проверяются на первом объекте из индекса;
+# если выгрузка без метаданных (например, проект 1C:EDT), impact_analysis
+# проверяется по найденному символу.
+objects = results.get("list_objects", {}).get("objects") or []
+if objects:
+    fqn = objects[0].get("fqn") or objects[0].get("name")
+    objname = objects[0].get("name") or fqn
+    for name, args in [
+        ("get_object_structure", {"object": fqn}),
+        ("find_function_in_object", {"object": fqn}),
+        ("impact_analysis", {"object": objname}),
+    ]:
+        send(counter, name, args)
+        results[name] = read_tool(counter)
+        counter += 1
+else:
+    send(counter, "impact_analysis", {"object": symbol})
+    results["impact_analysis"] = read_tool(counter)
+    counter += 1
+
+# Переключение корня — на тот же каталог: проверяем сам вызов и ответ.
+send(counter, "switch_export_root", {"export_root": export, "sync": True})
+results["switch_export_root"] = read_tool(counter)
+counter += 1
 
 p.stdin.close(); p.wait(timeout=30)
 json.dump(results, open(out, "w"), ensure_ascii=False, indent=1, sort_keys=True)
